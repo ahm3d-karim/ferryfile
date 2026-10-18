@@ -58,6 +58,15 @@ impl Engine for ImageEngine {
         out
     }
 
+    fn output_ext(&self, action_id: &str, input: &Path) -> Option<String> {
+        match action_id.split_once(':')? {
+            ("convert", ext) => Some(ext.to_string()),
+            ("resize", _) => Some(ext_of(input)),
+            ("compress", _) => Some("jpg".into()),
+            _ => None,
+        }
+    }
+
     fn run(&self, action_id: &str, input: &Path, _progress: Progress) -> Result<PathBuf, String> {
         let (kind, arg) = action_id.split_once(':').ok_or("bad action id")?;
         let img = image::open(input).map_err(|e| format!("Could not open image: {e}"))?;

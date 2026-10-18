@@ -257,6 +257,14 @@ impl Engine for FfmpegEngine {
         out
     }
 
+    fn output_ext(&self, action_id: &str, _input: &Path) -> Option<String> {
+        match action_id.split_once(':')? {
+            ("convert" | "audio", ext) => Some(ext.to_string()),
+            ("scale" | "compress", _) => Some("mp4".into()),
+            _ => None,
+        }
+    }
+
     fn run(&self, action_id: &str, input: &Path, progress: Progress) -> Result<PathBuf, String> {
         let ff = ffmpeg()?;
         let (kind, arg) = action_id.split_once(':').ok_or("bad action id")?;

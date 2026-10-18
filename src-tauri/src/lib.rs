@@ -1,6 +1,7 @@
 mod drag;
 mod dropbridge;
 mod engine;
+mod recipes;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -19,16 +20,19 @@ struct ProgressPayload {
     fraction: f32,
 }
 
+/// Sends progress for the file at `path` to the drawer.
+pub(crate) fn emit_progress(app: &tauri::AppHandle, path: &str, fraction: f32) {
+    let _ = app.emit_to(
+        "drawer",
+        "skiff-progress",
+        ProgressPayload { path: path.to_string(), fraction },
+    );
+}
+
 #[tauri::command]
 async fn run_action(app: tauri::AppHandle, action_id: String, path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let report = |fraction: f32| {
-            let _ = app.emit_to(
-                "drawer",
-                "skiff-progress",
-                ProgressPayload { path: path.clone(), fraction },
-            );
-        };
+        let report = |f: f32| emit_progress(&app, &path, f);
         engine::run_action(&action_id, std::path::Path::new(&path), &report)
             .map(|p| p.to_string_lossy().into_owned())
     })
@@ -42,6 +46,16 @@ fn pin_drawer() {
     drag::pin();
 }
 
+/// Let the drawer take keyboard focus (for typing in search or the editor).
+#[tauri::command]
+fn focus_drawer(app: tauri::AppHandle) {
+    drag::pin();
+    if let Some(w) = app.get_webview_window("drawer") {
+        drag::set_focusable(&w, true);
+        let _ = w.set_focus();
+    }
+}
+
 #[tauri::command]
 fn hide_drawer(app: tauri::AppHandle) {
     drag::hide_now(&app);
@@ -53,7 +67,13 @@ pub fn run() {
             list_actions,
             run_action,
             pin_drawer,
-            hide_drawer
+            focus_drawer,
+            hide_drawer,
+            recipes::recipes_for,
+            recipes::next_actions,
+            recipes::save_recipe,
+            recipes::delete_recipe,
+            recipes::run_recipe,
         ])
         .setup(|app| {
             let quit = MenuItem::with_id(app, "quit", "Quit Skiff", true, None::<&str>)?;
@@ -71,7 +91,7 @@ pub fn run() {
 
             let drawer = app.get_webview_window("drawer").expect("drawer window");
             dropbridge::install(&drawer);
-            drag::prepare_window(&drawer);
+            drag::set_focusable(&drawer, false);
             drag::start(app.handle().clone());
             Ok(())
         })

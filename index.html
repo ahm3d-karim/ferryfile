@@ -15,7 +15,29 @@
       </header>
       <section id="idle" class="hint">Drop a file here</section>
       <ul id="files"></ul>
-      <div id="actions"></div>
+
+      <div id="tools" hidden>
+        <input id="search" type="search" placeholder="Search recipes and actions" autocomplete="off" />
+        <section id="recipes">
+          <h2>Recipes</h2>
+          <div class="chips" id="recipe-chips"></div>
+        </section>
+        <div id="actions"></div>
+      </div>
+
+      <form id="editor" hidden>
+        <h2 id="editor-title">New recipe</h2>
+        <input id="recipe-name" type="text" placeholder="Recipe name" maxlength="60" autocomplete="off" />
+        <ol id="steps"></ol>
+        <select id="add-step"></select>
+        <p id="editor-error" class="error"></p>
+        <div class="editor-buttons">
+          <button type="submit" id="save-recipe" class="primary">Save</button>
+          <button type="button" id="cancel-recipe">Cancel</button>
+          <button type="button" id="delete-recipe" class="danger" hidden>Delete</button>
+        </div>
+      </form>
+
       <progress id="progress" max="1" value="0" hidden></progress>
       <p id="status"></p>
     </main>

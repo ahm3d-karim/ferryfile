@@ -41,15 +41,26 @@ static START_X: AtomicI32 = AtomicI32::new(0);
 static START_Y: AtomicI32 = AtomicI32::new(0);
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 
-/// Keep the drawer from stealing activation from Explorer.
-pub fn prepare_window(w: &tauri::WebviewWindow) {
+/// By default the drawer never takes activation, so dragging from Explorer
+/// isn't disturbed. It becomes focusable only while the user types in it.
+pub fn set_focusable(w: &tauri::WebviewWindow, focusable: bool) {
     if let Ok(hwnd) = w.hwnd() {
         unsafe {
-            let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-            let flags = (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize;
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | flags);
+            let mut ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) | WS_EX_TOOLWINDOW.0 as isize;
+            if focusable {
+                ex &= !(WS_EX_NOACTIVATE.0 as isize);
+            } else {
+                ex |= WS_EX_NOACTIVATE.0 as isize;
+            }
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
         }
     }
+}
+
+fn hide(w: &tauri::WebviewWindow) {
+    let _ = w.emit("skiff-drag-end", ());
+    let _ = w.hide();
+    set_focusable(w, false);
 }
 
 pub fn start(app: AppHandle) {
@@ -166,8 +177,7 @@ pub fn pin() {
 pub fn hide_now(app: &AppHandle) {
     pin();
     if let Some(w) = app.get_webview_window("drawer") {
-        let _ = w.emit("skiff-drag-end", ());
-        let _ = w.hide();
+        hide(&w);
     }
 }
 
@@ -179,8 +189,7 @@ fn schedule_hide(app: &AppHandle) {
         std::thread::sleep(Duration::from_millis(1800));
         if GENERATION.load(Ordering::SeqCst) == gen {
             if let Some(w) = app.get_webview_window("drawer") {
-                let _ = w.emit("skiff-drag-end", ());
-                let _ = w.hide();
+                hide(&w);
             }
         }
     });

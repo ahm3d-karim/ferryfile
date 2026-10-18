@@ -1,16 +1,35 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
-const drawer = document.getElementById("drawer");
-const idle = document.getElementById("idle");
-const filesEl = document.getElementById("files");
-const actionsEl = document.getElementById("actions");
-const statusEl = document.getElementById("status");
-const progressEl = document.getElementById("progress");
+const $ = (id) => document.getElementById(id);
+const drawer = $("drawer");
+const idle = $("idle");
+const filesEl = $("files");
+const toolsEl = $("tools");
+const searchEl = $("search");
+const recipeChips = $("recipe-chips");
+const actionsEl = $("actions");
+const statusEl = $("status");
+const progressEl = $("progress");
+
+const editor = $("editor");
+const editorTitle = $("editor-title");
+const nameEl = $("recipe-name");
+const stepsEl = $("steps");
+const addStepEl = $("add-step");
+const editorError = $("editor-error");
+const saveBtn = $("save-recipe");
+const deleteBtn = $("delete-recipe");
 
 let paths = [];
 
 const basename = (p) => p.split(/[\\/]/).pop();
+
+function el(tag, props = {}, children = []) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
 
 function setStatus(text, kind = "") {
   statusEl.textContent = text;
@@ -21,38 +40,37 @@ function reset() {
   paths = [];
   idle.hidden = false;
   filesEl.replaceChildren();
-  actionsEl.replaceChildren();
+  toolsEl.hidden = true;
+  closeEditor();
   setStatus("");
 }
+
+// ---------------------------------------------------------------- running
 
 // Overall progress across the files of the current run.
 let running = null; // { index, count }
 
 function setProgress(fraction) {
-  if (fraction == null) {
-    progressEl.hidden = true;
-    return;
-  }
-  progressEl.hidden = false;
-  progressEl.value = fraction;
+  progressEl.hidden = fraction == null;
+  if (fraction != null) progressEl.value = fraction;
 }
 
 listen("skiff-progress", (e) => {
-  if (!running) return;
-  setProgress((running.index + e.payload.fraction) / running.count);
+  if (running) setProgress((running.index + e.payload.fraction) / running.count);
 });
 
-async function runAction(action) {
+/** Runs `job(path)` for every dropped file, with progress and status. */
+async function runJob(label, job) {
   if (running) return;
-  setStatus(`${action.group}: ${action.label}…`, "busy");
-  actionsEl.classList.add("disabled");
+  setStatus(`${label}…`, "busy");
+  toolsEl.classList.add("disabled");
   setProgress(0);
   const results = [];
   try {
     for (const [index, p] of paths.entries()) {
       running = { index, count: paths.length };
       try {
-        results.push(basename(await invoke("run_action", { actionId: action.id, path: p })));
+        results.push(basename(await job(p)));
       } catch (err) {
         setStatus(`${basename(p)}: ${err}`, "error");
         return;
@@ -62,55 +80,208 @@ async function runAction(action) {
   } finally {
     running = null;
     setProgress(null);
-    actionsEl.classList.remove("disabled");
+    toolsEl.classList.remove("disabled");
+  }
+}
+
+// ---------------------------------------------------------------- listing
+
+function chip(label, onClick, { title = "", search = label, extra } = {}) {
+  const b = el("button", { type: "button", textContent: label, title });
+  b.dataset.search = search.toLowerCase();
+  b.addEventListener("click", onClick);
+  if (!extra) return b;
+  const wrap = el("span", { className: "chip-wrap" }, [b, extra]);
+  wrap.dataset.search = b.dataset.search;
+  return wrap;
+}
+
+async function renderRecipes() {
+  const recipes = await invoke("recipes_for", { path: paths[0] });
+  recipeChips.replaceChildren(
+    ...recipes.map((r) => {
+      const steps = r.stepTitles.join(" → ");
+      const run = () => runJob(r.name, (p) => invoke("run_recipe", { id: r.id, path: p }));
+      const edit = r.builtin
+        ? null
+        : el("button", {
+            type: "button",
+            className: "edit",
+            textContent: "✎",
+            title: "Edit recipe",
+            onclick: () => openEditor(r),
+          });
+      return chip(r.name, run, { title: steps, search: `${r.name} ${steps}`, extra: edit });
+    }),
+    chip("+ New", () => openEditor(null), { title: "Chain actions into a recipe", search: "new recipe" }),
+  );
+}
+
+async function renderActions() {
+  // Actions come from the first file; other files get them if they support the same id.
+  const actions = await invoke("list_actions", { path: paths[0] });
+  const groups = Map.groupBy(actions, (a) => a.group);
+  actionsEl.replaceChildren(
+    ...[...groups].map(([name, items]) =>
+      el("section", {}, [
+        el("h2", { textContent: name }),
+        el(
+          "div",
+          { className: "chips" },
+          items.map((a) =>
+            chip(a.label, () => runJob(`${a.group}: ${a.label}`, (p) => invoke("run_action", { actionId: a.id, path: p })), {
+              search: `${a.group} ${a.label}`,
+            }),
+          ),
+        ),
+      ]),
+    ),
+  );
+  return actions.length;
+}
+
+function applySearch() {
+  const q = searchEl.value.trim().toLowerCase();
+  for (const section of toolsEl.querySelectorAll("section")) {
+    let visible = 0;
+    for (const c of section.querySelectorAll(".chips > *")) {
+      const show = !q || c.dataset.search.includes(q);
+      c.hidden = !show;
+      if (show) visible++;
+    }
+    section.hidden = visible === 0;
   }
 }
 
 async function showFiles(dropped) {
   paths = dropped;
   idle.hidden = paths.length > 0;
-  filesEl.replaceChildren(
-    ...paths.map((p) => {
-      const li = document.createElement("li");
-      li.textContent = basename(p);
-      li.title = p;
-      return li;
-    }),
-  );
-  actionsEl.replaceChildren();
+  filesEl.replaceChildren(...paths.map((p) => el("li", { textContent: basename(p), title: p })));
+  closeEditor();
   setStatus("");
   if (!paths.length) return;
 
-  // Actions come from the first file; other files get them if they support the same id.
-  const actions = await invoke("list_actions", { path: paths[0] });
-  if (!actions.length) {
-    setStatus("No actions for this file type yet.");
-    return;
-  }
-  const groups = new Map();
-  for (const a of actions) {
-    if (!groups.has(a.group)) groups.set(a.group, []);
-    groups.get(a.group).push(a);
-  }
-  for (const [name, items] of groups) {
-    const section = document.createElement("section");
-    const h = document.createElement("h2");
-    h.textContent = name;
-    const row = document.createElement("div");
-    row.className = "chips";
-    for (const a of items) {
-      const b = document.createElement("button");
-      b.textContent = a.label;
-      b.addEventListener("click", () => runAction(a));
-      row.append(b);
-    }
-    section.append(h, row);
-    actionsEl.append(section);
-  }
+  searchEl.value = "";
+  const [, actionCount] = await Promise.all([renderRecipes(), renderActions()]);
+  toolsEl.hidden = false;
+  applySearch();
+  if (!actionCount) setStatus("No actions for this file type yet.");
 }
 
-document.getElementById("close").addEventListener("click", () => invoke("hide_drawer"));
-window.addEventListener("keydown", (e) => e.key === "Escape" && invoke("hide_drawer"));
+searchEl.addEventListener("input", applySearch);
+
+// ---------------------------------------------------------------- editor
+
+let editing = null; // { id: string | null, steps: [{ id, title }] }
+
+function openEditor(recipe) {
+  editing = {
+    id: recipe?.id ?? null,
+    steps: recipe ? recipe.steps.map((id, i) => ({ id, title: recipe.stepTitles[i] })) : [],
+  };
+  editorTitle.textContent = recipe ? "Edit recipe" : "New recipe";
+  nameEl.value = recipe?.name ?? "";
+  deleteBtn.hidden = !recipe;
+  toolsEl.hidden = true;
+  editor.hidden = false;
+  setStatus("");
+  refreshEditor();
+  invoke("focus_drawer").then(() => nameEl.focus());
+}
+
+function closeEditor() {
+  editing = null;
+  editor.hidden = true;
+  if (paths.length) toolsEl.hidden = false;
+}
+
+async function refreshEditor() {
+  stepsEl.replaceChildren(
+    ...editing.steps.map((s, i) =>
+      el("li", {}, [
+        el("span", { textContent: s.title }),
+        el("button", {
+          type: "button",
+          className: "remove",
+          textContent: "×",
+          title: "Remove step",
+          onclick: () => {
+            editing.steps.splice(i, 1);
+            refreshEditor();
+          },
+        }),
+      ]),
+    ),
+  );
+
+  let next = [];
+  editorError.textContent = "";
+  try {
+    next = await invoke("next_actions", { path: paths[0], steps: editing.steps.map((s) => s.id) });
+  } catch (err) {
+    editorError.textContent = err;
+  }
+  addStepEl.replaceChildren(
+    el("option", { value: "", textContent: next.length ? "Add a step…" : "No further steps for this format" }),
+    ...next.map((a) => el("option", { value: a.id, textContent: `${a.group} ${a.label}` })),
+  );
+  addStepEl.disabled = !next.length;
+  saveBtn.disabled = !!editorError.textContent || !editing.steps.length;
+}
+
+addStepEl.addEventListener("change", () => {
+  const opt = addStepEl.selectedOptions[0];
+  if (!opt?.value) return;
+  editing.steps.push({ id: opt.value, title: opt.textContent });
+  refreshEditor();
+});
+
+editor.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await invoke("save_recipe", {
+      id: editing.id,
+      name: nameEl.value,
+      steps: editing.steps.map((s) => s.id),
+    });
+  } catch (err) {
+    editorError.textContent = err;
+    return;
+  }
+  closeEditor();
+  await renderRecipes();
+  applySearch();
+  setStatus("Recipe saved", "ok");
+});
+
+$("cancel-recipe").addEventListener("click", closeEditor);
+
+deleteBtn.addEventListener("click", async () => {
+  try {
+    await invoke("delete_recipe", { id: editing.id });
+  } catch (err) {
+    editorError.textContent = err;
+    return;
+  }
+  closeEditor();
+  await renderRecipes();
+  applySearch();
+  setStatus("Recipe deleted");
+});
+
+// Typing needs keyboard focus, which the drawer doesn't take by default.
+for (const input of [searchEl, nameEl]) {
+  input.addEventListener("pointerdown", () => invoke("focus_drawer"));
+}
+
+// ---------------------------------------------------------------- drawer
+
+$("close").addEventListener("click", () => invoke("hide_drawer"));
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (editing) closeEditor();
+  else invoke("hide_drawer");
+});
 
 listen("skiff-drag-start", () => {
   reset();
@@ -137,6 +308,4 @@ document.addEventListener("drop", (e) => {
   invoke("pin_drawer");
   window.chrome.webview.postMessageWithAdditionalObjects("skiff-drop", files);
 });
-listen("skiff-dropped", (e) => {
-  showFiles(e.payload);
-});
+listen("skiff-dropped", (e) => showFiles(e.payload));
