@@ -40,7 +40,7 @@ const OUTPUTS: &[(&str, &str, &str)] = &[
 
 pub struct DocEngine;
 
-fn pandoc() -> Result<&'static Path, String> {
+pub(super) fn pandoc() -> Result<&'static Path, String> {
     static PANDOC: OnceLock<Option<PathBuf>> = OnceLock::new();
     PANDOC
         .get_or_init(|| find_sidecar("pandoc", "--version"))
@@ -48,7 +48,7 @@ fn pandoc() -> Result<&'static Path, String> {
         .ok_or_else(|| "pandoc wasn't found. Run scripts/fetch-doc-tools.ps1 or install pandoc on PATH.".into())
 }
 
-fn reader_for(ext: &str) -> Option<&'static str> {
+pub(super) fn reader_for(ext: &str) -> Option<&'static str> {
     INPUTS.iter().find(|(e, _)| *e == ext).map(|(_, r)| *r)
 }
 

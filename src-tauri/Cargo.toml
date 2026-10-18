@@ -15,6 +15,11 @@ tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 pdfium-render = "0.9"
+calamine = { version = "0.36", features = ["dates"] }
+typst = "0.15"
+typst-pdf = "0.15"
+typst-layout = "0.15"
+typst-kit = { version = "0.15", default-features = false, features = ["embedded-fonts", "scan-fonts", "system-files"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "tiff"] }
 
 [target.'cfg(windows)'.dependencies]
@@ -27,3 +32,6 @@ features = [
   "Win32_UI_WindowsAndMessaging",
   "Win32_System_LibraryLoader",
 ]
+
+[dev-dependencies]
+rust_xlsxwriter = "0.100"

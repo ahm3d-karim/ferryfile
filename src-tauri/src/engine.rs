@@ -7,11 +7,15 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+mod builtin_engine;
 mod doc_engine;
+mod docling_engine;
 mod ffmpeg_engine;
 mod image_engine;
+mod msoffice_engine;
 mod office_engine;
 mod pdf_engine;
+mod typeset;
 
 /// Reports progress of a running action as a fraction in `0.0..=1.0`.
 pub type Progress<'a> = &'a dyn Fn(f32);
@@ -62,8 +66,11 @@ fn engines() -> Vec<Box<dyn Engine>> {
         Box::new(image_engine::ImageEngine),
         Box::new(ffmpeg_engine::FfmpegEngine),
         Box::new(pdf_engine::PdfEngine),
+        Box::new(msoffice_engine::MsOfficeEngine),
         Box::new(office_engine::OfficeEngine),
+        Box::new(builtin_engine::BuiltinEngine),
         Box::new(doc_engine::DocEngine),
+        Box::new(docling_engine::DoclingEngine),
     ]
 }
 
