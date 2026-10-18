@@ -29,6 +29,7 @@ Images, audio, video, PDFs, documents and spreadsheets, all on your machine.
 - [Architecture](#architecture)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
+- [Code signing policy](#code-signing-policy)
 - [Licenses](#licenses)
 
 ## How it works
@@ -145,19 +146,23 @@ cargo test --lib                 # unit tests
 cargo test --lib -- --ignored    # real conversions with FFmpeg, pandoc, PDFium
 ```
 
-**Code signing**
+**Releases**
 
-`npx tauri build` passes every binary to [`scripts/sign.ps1`](scripts/sign.ps1).
-It signs when one of these is set, and otherwise leaves the build unsigned:
+Bump `version` in `src-tauri/tauri.conf.json`, merge, then push a matching tag
+(`v0.2.0`). The [release workflow](.github/workflows/release.yml) builds the
+installer, sends it to SignPath for signing once that's configured (see
+[Code signing policy](#code-signing-policy)), and drafts a GitHub release.
+
+**Signing local builds (optional)**
+
+`npx tauri build` passes every binary to [`scripts/sign.ps1`](scripts/sign.ps1),
+which signs with your own certificate when one of these is set and otherwise
+leaves the build unsigned:
 
 | Variable | Meaning |
 | --- | --- |
 | `SKIFF_SIGN_THUMBPRINT` | SHA-1 thumbprint of a code-signing certificate in the Windows certificate store |
 | `SKIFF_SIGN_PFX` + `SKIFF_SIGN_PFX_PASSWORD` | Base64-encoded `.pfx` file and its password |
-
-The [release workflow](.github/workflows/release.yml) reads the PFX pair from
-repository secrets of the same names. Push a tag like `v0.2.0` to build a
-draft release.
 
 ## Optional integrations
 
@@ -218,6 +223,17 @@ skiff/
 test, including real conversions, on each PR. Keep commits focused, and add a
 test for new engine behaviour (opt-in with `#[ignore]` if it needs the
 bundled tools).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/),
+certificate by [SignPath Foundation](https://signpath.org/).
+
+Release installers are built from this repository by GitHub Actions and signed
+only after a maintainer approves each request. Team roles, what is signed, and
+Skiff's privacy policy are in [CODE_SIGNING.md](CODE_SIGNING.md). In short:
+Skiff does not transfer any information to other networked systems unless you
+ask it to.
 
 ## Licenses
 
