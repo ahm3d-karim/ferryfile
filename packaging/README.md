@@ -12,9 +12,11 @@ Every channel ships the assets of a published GitHub release:
 ## Releasing
 
 1. Bump `version` in `src-tauri/tauri.conf.json` (and `Cargo.toml`), open a PR, merge.
-2. Tag `main` and push the tag (`git tag v0.2.0 origin/main`, then
-   `git push origin v0.2.0`). `release.yml` builds, signs if SignPath is set up,
-   and drafts the release.
+2. Fetch first so the tag lands on the merged code, then tag and push:
+   `git fetch origin`, `git tag v0.2.0 origin/main`, `git push origin v0.2.0`.
+   `release.yml` builds, signs if SignPath is set up, and drafts the release.
+   Check the draft's name and file names before publishing; a tag on an
+   older commit builds that commit.
 3. Check the draft and **publish** it. `channels.yml` then pushes to npm and
    winget; Scoop catches up within a few hours.
 
