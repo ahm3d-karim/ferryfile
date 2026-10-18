@@ -107,12 +107,22 @@ Open **Settings…** from the tray menu or the ⚙ button in the drawer.
 
 ## Install
 
-Releases are published on the
-[Releases page](https://github.com/ahm3d-karim/skiff/releases) as a per-user
-installer (`Skiff_x.y.z_x64-setup.exe`); no administrator rights needed.
+Pick whichever you prefer; all of them install the same release.
 
-> Until releases are code-signed, Windows SmartScreen may warn about an
-> unrecognized app. Choose **More info → Run anyway**.
+| How | Command / link |
+| --- | --- |
+| **Installer** | Download `Skiff_x.y.z_x64-setup.exe` from [Releases](https://github.com/ahm3d-karim/skiff/releases). Per-user, no admin rights. |
+| **winget** | `winget install AhmadKarim.Skiff` |
+| **Scoop** | `scoop bucket add skiff https://github.com/ahm3d-karim/scoop-skiff` then `scoop install skiff/skiff` |
+| **npm** | `npx skiff-app` (or `npm i -g skiff-app`, then `skiff`) |
+| **Portable** | Unzip `Skiff_x.y.z_x64-portable.zip` from [Releases](https://github.com/ahm3d-karim/skiff/releases) anywhere and run `skiff.exe`. |
+
+> Until releases are code-signed, Windows SmartScreen may warn when you run a
+> downloaded installer. Choose **More info → Run anyway**. winget, Scoop and
+> npm installs don't show that prompt.
+
+Maintainers: how each channel is published is in
+[packaging/README.md](packaging/README.md).
 
 ## Build from source
 
