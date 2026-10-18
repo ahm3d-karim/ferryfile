@@ -118,6 +118,7 @@ pub fn run() {
             files::open_terminal,
             files::send_to_folder,
             files::zip_items,
+            files::file_info,
             shelf::shelf_state,
             shelf::shelf_add,
             shelf::shelf_remove,
