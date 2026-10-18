@@ -1,0 +1,25 @@
+{
+  "name": "skiff-app",
+  "version": "0.0.0-dev",
+  "description": "Skiff: offline drag-and-drop file converter for Windows. `npx skiff-app` downloads and starts it.",
+  "license": "MIT",
+  "author": "Ahmad Karim",
+  "homepage": "https://github.com/ahm3d-karim/skiff#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ahm3d-karim/skiff.git",
+    "directory": "packaging/npm"
+  },
+  "bugs": "https://github.com/ahm3d-karim/skiff/issues",
+  "keywords": ["file-converter", "windows", "drag-and-drop", "ffmpeg", "pdf", "pandoc", "tauri"],
+  "type": "module",
+  "bin": {
+    "skiff": "bin/skiff.js"
+  },
+  "files": ["bin", "release.json", "README.md", "LICENSE"],
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "engines": {
+    "node": ">=18"
+  }
+}

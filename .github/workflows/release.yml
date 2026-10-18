@@ -93,17 +93,31 @@ jobs:
           output-artifact-directory: signed
           skip-decompress: true
 
+      - name: Use the signed installer if there is one
+        shell: pwsh
+        run: |
+          $signed = Join-Path signed "${{ steps.installer.outputs.name }}"
+          if (Test-Path $signed) {
+            Copy-Item $signed "${{ steps.installer.outputs.path }}" -Force
+            "SIGNED=true" >> $env:GITHUB_ENV
+          }
+
+      # Portable zip for Scoop and npm, plus .sha256 files for every asset.
+      - name: Package portable zip and checksums
+        shell: pwsh
+        run: ./scripts/package-portable.ps1
+
       - name: Draft GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $signed = Join-Path signed "${{ steps.installer.outputs.name }}"
-          if (Test-Path $signed) {
-            $file = $signed
+          if ($env:SIGNED -eq 'true') {
             $note = "Signed installer. Free code signing provided by SignPath.io, certificate by SignPath Foundation."
           } else {
-            $file = "${{ steps.installer.outputs.path }}"
             $note = "Unsigned installer: Windows SmartScreen may warn on first run (More info, then Run anyway)."
           }
-          gh release create "${{ github.ref_name }}" $file --draft --title "Skiff ${{ github.ref_name }}" --generate-notes --notes "$note"
+          $note += "`n`nAlso available via ``winget install AhmadKarim.Skiff``, Scoop and ``npx skiff-app`` once this release is published."
+          $bundle = "src-tauri/target/release/bundle"
+          $assets = @(Get-ChildItem "$bundle/nsis/*-setup.exe*", "$bundle/portable/*" | ForEach-Object FullName)
+          gh release create "${{ github.ref_name }}" @assets --draft --title "Skiff ${{ github.ref_name }}" --generate-notes --notes "$note"
