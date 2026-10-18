@@ -6,6 +6,7 @@ const idle = document.getElementById("idle");
 const filesEl = document.getElementById("files");
 const actionsEl = document.getElementById("actions");
 const statusEl = document.getElementById("status");
+const progressEl = document.getElementById("progress");
 
 let paths = [];
 
@@ -24,18 +25,45 @@ function reset() {
   setStatus("");
 }
 
-async function runAction(action) {
-  setStatus(`${action.group}: ${action.label}…`, "busy");
-  const results = [];
-  for (const p of paths) {
-    try {
-      results.push(basename(await invoke("run_action", { actionId: action.id, path: p })));
-    } catch (err) {
-      setStatus(`${basename(p)}: ${err}`, "error");
-      return;
-    }
+// Overall progress across the files of the current run.
+let running = null; // { index, count }
+
+function setProgress(fraction) {
+  if (fraction == null) {
+    progressEl.hidden = true;
+    return;
   }
-  setStatus(`Saved ${results.join(", ")}`, "ok");
+  progressEl.hidden = false;
+  progressEl.value = fraction;
+}
+
+listen("skiff-progress", (e) => {
+  if (!running) return;
+  setProgress((running.index + e.payload.fraction) / running.count);
+});
+
+async function runAction(action) {
+  if (running) return;
+  setStatus(`${action.group}: ${action.label}…`, "busy");
+  actionsEl.classList.add("disabled");
+  setProgress(0);
+  const results = [];
+  try {
+    for (const [index, p] of paths.entries()) {
+      running = { index, count: paths.length };
+      try {
+        results.push(basename(await invoke("run_action", { actionId: action.id, path: p })));
+      } catch (err) {
+        setStatus(`${basename(p)}: ${err}`, "error");
+        return;
+      }
+    }
+    setStatus(`Saved ${results.join(", ")}`, "ok");
+  } finally {
+    running = null;
+    setProgress(null);
+    actionsEl.classList.remove("disabled");
+  }
 }
 
 async function showFiles(dropped) {

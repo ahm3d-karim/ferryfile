@@ -5,7 +5,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+mod ffmpeg_engine;
 mod image_engine;
+
+/// Reports progress of a running action as a fraction in `0.0..=1.0`.
+pub type Progress<'a> = &'a dyn Fn(f32);
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Action {
@@ -24,11 +28,14 @@ impl Action {
 
 pub trait Engine: Send + Sync {
     fn actions(&self, path: &Path) -> Vec<Action>;
-    fn run(&self, action_id: &str, input: &Path) -> Result<PathBuf, String>;
+    fn run(&self, action_id: &str, input: &Path, progress: Progress) -> Result<PathBuf, String>;
 }
 
 fn engines() -> Vec<Box<dyn Engine>> {
-    vec![Box::new(image_engine::ImageEngine)]
+    vec![
+        Box::new(image_engine::ImageEngine),
+        Box::new(ffmpeg_engine::FfmpegEngine),
+    ]
 }
 
 pub fn ext_of(path: &Path) -> String {
@@ -42,10 +49,10 @@ pub fn list_actions(path: &Path) -> Vec<Action> {
     engines().iter().flat_map(|e| e.actions(path)).collect()
 }
 
-pub fn run_action(action_id: &str, input: &Path) -> Result<PathBuf, String> {
+pub fn run_action(action_id: &str, input: &Path, progress: Progress) -> Result<PathBuf, String> {
     for e in engines() {
         if e.actions(input).iter().any(|a| a.id == action_id) {
-            return e.run(action_id, input);
+            return e.run(action_id, input, progress);
         }
     }
     Err(format!("No engine can run '{action_id}' on this file"))

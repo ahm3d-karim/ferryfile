@@ -5,7 +5,7 @@ mod engine;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager,
+    Emitter, Manager,
 };
 
 #[tauri::command]
@@ -13,10 +13,23 @@ fn list_actions(path: String) -> Vec<engine::Action> {
     engine::list_actions(std::path::Path::new(&path))
 }
 
+#[derive(Clone, serde::Serialize)]
+struct ProgressPayload {
+    path: String,
+    fraction: f32,
+}
+
 #[tauri::command]
-async fn run_action(action_id: String, path: String) -> Result<String, String> {
+async fn run_action(app: tauri::AppHandle, action_id: String, path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        engine::run_action(&action_id, std::path::Path::new(&path))
+        let report = |fraction: f32| {
+            let _ = app.emit_to(
+                "drawer",
+                "skiff-progress",
+                ProgressPayload { path: path.clone(), fraction },
+            );
+        };
+        engine::run_action(&action_id, std::path::Path::new(&path), &report)
             .map(|p| p.to_string_lossy().into_owned())
     })
     .await

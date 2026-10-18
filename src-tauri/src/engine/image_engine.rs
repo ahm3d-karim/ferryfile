@@ -6,7 +6,7 @@ use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
 use image::DynamicImage;
 
-use super::{ext_of, output_path, Action, Engine};
+use super::{ext_of, output_path, Action, Engine, Progress};
 
 const INPUTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff"];
 const TARGETS: &[(&str, &str)] = &[
@@ -58,7 +58,7 @@ impl Engine for ImageEngine {
         out
     }
 
-    fn run(&self, action_id: &str, input: &Path) -> Result<PathBuf, String> {
+    fn run(&self, action_id: &str, input: &Path, _progress: Progress) -> Result<PathBuf, String> {
         let (kind, arg) = action_id.split_once(':').ok_or("bad action id")?;
         let img = image::open(input).map_err(|e| format!("Could not open image: {e}"))?;
         match kind {
@@ -108,18 +108,18 @@ mod tests {
         let ids: Vec<String> = engine.actions(&input).into_iter().map(|a| a.id).collect();
         assert!(!ids.contains(&"convert:png".to_string()));
 
-        let jpg = engine.run("convert:jpg", &input).unwrap();
+        let jpg = engine.run("convert:jpg", &input, &|_| {}).unwrap();
         assert_eq!(image::open(&jpg).unwrap().width(), 40);
 
-        let half = engine.run("resize:50", &input).unwrap();
+        let half = engine.run("resize:50", &input, &|_| {}).unwrap();
         let img = image::open(&half).unwrap();
         assert_eq!((img.width(), img.height()), (20, 10));
 
-        let small = engine.run("compress:50", &input).unwrap();
+        let small = engine.run("compress:50", &input, &|_| {}).unwrap();
         assert_eq!(ext_of(&small), "jpg");
 
         // A second conversion must not overwrite the first.
-        let jpg2 = engine.run("convert:jpg", &input).unwrap();
+        let jpg2 = engine.run("convert:jpg", &input, &|_| {}).unwrap();
         assert_ne!(jpg, jpg2);
 
         std::fs::remove_dir_all(&dir).unwrap();
