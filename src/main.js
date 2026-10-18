@@ -48,43 +48,6 @@ function formatBytes(n) {
 
 // ---------------------------------------------------------------- copy
 
-/** One-line reasons to pick a target, shown next to it. */
-const HINTS = {
-  "convert:webp": "Smaller, keeps transparency",
-  "convert:jpg": "Photos, no transparency",
-  "convert:png": "Lossless, keeps transparency",
-  "convert:gif": "256 colors, can loop",
-  "convert:bmp": "Uncompressed",
-  "convert:tiff": "For print and archiving",
-  "convert:pdf": "Easy to share and print",
-  "convert:mp3": "Plays everywhere",
-  "convert:m4a": "Small, good quality",
-  "convert:wav": "Uncompressed",
-  "convert:flac": "Lossless",
-  "convert:ogg": "Open format",
-  "convert:opus": "Smallest for speech",
-  "convert:mp4": "Plays everywhere",
-  "convert:mov": "For Apple and editing apps",
-  "convert:mkv": "Keeps every track",
-  "convert:webm": "For the web",
-  "convert:md": "Plain text with structure",
-  "text:md": "Plain text with structure",
-  "convert:docx": "Opens in Word",
-  "convert:odt": "Opens in LibreOffice",
-  "convert:html": "Opens in any browser",
-  "convert:epub": "For e-readers",
-  "convert:txt": "Just the words",
-  "text:txt": "Just the words",
-  "convert:csv": "First sheet, plain text",
-  "audio:mp3": "Just the sound",
-  "audio:m4a": "Just the sound, smaller",
-  "pages:png": "One image per page",
-  "pages:jpg": "One image per page",
-  "combine:pdf": "In drop order",
-  "compress:28": "Same video, smaller file",
-  "docling:md": "Keeps tables and layout",
-};
-
 /** Shorter labels where the engine's would crowd a segmented control. */
 const SHORT = { "compress:75": "Balanced", "compress:50": "Smallest" };
 
@@ -221,7 +184,6 @@ async function renderActions() {
     const isCombine = combined.includes(pick);
     const verb = pick.group === "Convert" ? `Convert to ${pick.label}` : `${pick.group}: ${pick.label}`;
     $("suggested-label").textContent = isCombine ? `Combine into ${pick.label.replace(/^One /, "one ")}` : verb;
-    $("suggested-hint").textContent = HINTS[pick.id] ?? "";
     suggestedBtn.dataset.search = `${verb} ${pick.id}`.toLowerCase();
     suggestedRun = isCombine
       ? () => runJob(`Combining ${paths.length} files`, () => invoke("run_combine", { actionId: pick.id, paths }), [paths[0]])
@@ -235,7 +197,6 @@ async function renderActions() {
       .filter((a) => a !== pick)
       .map((a) =>
         row(a.label, () => runJob(`${a.group}: ${a.label}`, () => invoke("run_combine", { actionId: a.id, paths }), [paths[0]]), {
-          hint: `All ${paths.length} files`,
           search: `${a.group} ${a.label}`,
         }),
       );
@@ -272,7 +233,7 @@ async function renderActions() {
     }
     flushPair();
     const heading = name === "Convert" ? "Convert to" : name;
-    const rows = shown.map((a) => row(a.label, runAction(a), { hint: HINTS[a.id] ?? "", search: `${a.group} ${a.label}` }));
+    const rows = shown.map((a) => row(a.label, runAction(a), { search: `${a.group} ${a.label}` }));
     const body = el("div", { className: "rows" }, rows.slice(0, 5));
     if (rows.length > 5) {
       const rest = rows.slice(5);
