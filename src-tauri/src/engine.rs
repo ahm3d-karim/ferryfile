@@ -12,6 +12,7 @@ mod doc_engine;
 mod docling_engine;
 mod ffmpeg_engine;
 mod image_engine;
+mod image_meta;
 mod msoffice_engine;
 mod office_engine;
 mod pdf_engine;
