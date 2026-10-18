@@ -10,6 +10,6 @@ export default defineConfig({
   build: {
     target: "chrome105",
     outDir: "dist",
-    rollupOptions: { input: { drawer: "index.html", shelf: "shelf.html" } },
+    rollupOptions: { input: { drawer: "index.html", shelf: "shelf.html", settings: "settings.html" } },
   },
 });

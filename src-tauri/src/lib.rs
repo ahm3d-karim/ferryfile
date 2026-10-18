@@ -3,6 +3,7 @@ mod dropbridge;
 mod engine;
 mod files;
 mod recipes;
+mod settings;
 mod shelf;
 
 use tauri::{
@@ -83,9 +84,21 @@ fn hide_drawer(app: tauri::AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
+        // Must come first: a second launch just opens settings in the running app.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            settings::open_settings(app.clone());
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_drag::init())
         .invoke_handler(tauri::generate_handler![
+            settings::get_settings,
+            settings::set_settings,
+            settings::pick_output_dir,
+            settings::open_settings,
             files::copy_paths,
             files::copy_files,
             files::reveal,
@@ -113,21 +126,35 @@ pub fn run() {
             recipes::run_recipe,
         ])
         .setup(|app| {
+            settings::load(app.handle());
             app.manage(shelf::load(app.handle()));
 
             let show_shelf = MenuItem::with_id(app, "shelf", "Show shelf", true, None::<&str>)?;
+            let open_settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Skiff", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_shelf, &quit])?;
+            let menu = Menu::with_items(app, &[&show_shelf, &open_settings, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Skiff")
+                .tooltip("Skiff — drag a file from Explorer")
                 .menu(&menu)
                 .on_menu_event(|app, ev| match ev.id.as_ref() {
                     "shelf" => shelf::show_shelf(app.clone()),
+                    "settings" => settings::open_settings(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .build(app)?;
+
+            // Closing settings just hides it; the app lives in the tray.
+            if let Some(w) = app.get_webview_window("settings") {
+                let hide = w.clone();
+                w.on_window_event(move |ev| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = ev {
+                        api.prevent_close();
+                        let _ = hide.hide();
+                    }
+                });
+            }
 
             let drawer = app.get_webview_window("drawer").expect("drawer window");
             dropbridge::install(&drawer);

@@ -1,0 +1,55 @@
+name: Release
+
+# Push a tag like v0.2.0 to build the installer into a draft GitHub release.
+# Signing uses the SKIFF_SIGN_PFX / SKIFF_SIGN_PFX_PASSWORD secrets when set
+# (see scripts/sign.ps1); without them the installer is built unsigned.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Cache bundled tools
+        id: tools
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/binaries
+          key: tools-${{ hashFiles('scripts/fetch-*.ps1') }}
+
+      - name: Fetch bundled tools
+        if: steps.tools.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          ./scripts/fetch-ffmpeg.ps1
+          ./scripts/fetch-doc-tools.ps1
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SKIFF_SIGN_PFX: ${{ secrets.SKIFF_SIGN_PFX }}
+          SKIFF_SIGN_PFX_PASSWORD: ${{ secrets.SKIFF_SIGN_PFX_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Skiff ${{ github.ref_name }}
+          releaseBody: See the commits since the previous release.
+          releaseDraft: true

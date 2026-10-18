@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skiff Settings</title>
+    <link rel="stylesheet" href="/src/settings.css" />
+  </head>
+  <body>
+    <main>
+      <h1><span class="boat">⛵</span> Skiff settings</h1>
+
+      <label class="row">
+        <span>
+          <strong>Start with Windows</strong>
+          <small>Keep Skiff ready in the tray after you sign in.</small>
+        </span>
+        <input id="autostart" type="checkbox" role="switch" />
+      </label>
+
+      <fieldset>
+        <legend>Drawer edge</legend>
+        <label><input type="radio" name="side" value="right" /> Right</label>
+        <label><input type="radio" name="side" value="left" /> Left</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Open the drawer</legend>
+        <label><input type="radio" name="delay" value="0" /> As soon as I drag a file</label>
+        <label><input type="radio" name="delay" value="400" /> After a short pause <small>(fewer accidental opens)</small></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Save converted files</legend>
+        <label><input type="radio" name="output" value="next" /> Next to the original</label>
+        <label class="folder">
+          <input type="radio" name="output" value="folder" /> In a folder:
+          <button type="button" id="pick">Choose…</button>
+        </label>
+        <p id="folder-path" class="path"></p>
+      </fieldset>
+
+      <p id="status" role="status"></p>
+      <footer>
+        <span id="about"></span>
+        <button type="button" id="close" class="primary">Done</button>
+      </footer>
+    </main>
+    <script type="module" src="/src/settings.js"></script>
+  </body>
+</html>

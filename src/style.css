@@ -52,3 +52,7 @@ progress::-webkit-progress-value { background: var(--teal); transition: width .2
 .shelf-btn { margin-left: auto; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--fill); font-size: 12px; opacity: .8; }
 .shelf-btn:hover { border-color: var(--teal); color: var(--teal); opacity: 1; }
 #shelf-count { color: var(--teal); font-weight: 600; }
+#settings-btn { font-size: 15px; }
+/* Drawer docked to the left edge: mirror the shape and slide-in direction. */
+.left .drawer { inset: 12px 12px 12px 0; border-radius: 0 16px 16px 0; border: 1px solid rgba(255,255,255,.08); border-left: none; transform: translateX(-110%); }
+.left .drawer.open { transform: none; }
