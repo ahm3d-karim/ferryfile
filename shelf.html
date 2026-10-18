@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skiff Shelf</title>
+    <link rel="stylesheet" href="/src/shelf.css" />
+  </head>
+  <body>
+    <main id="shelf">
+      <header data-tauri-drag-region>
+        <span data-tauri-drag-region>Shelf</span>
+        <span id="count" data-tauri-drag-region></span>
+        <button id="drag-all" title="Drag all items out" hidden>⇲ All</button>
+        <button id="clear" title="Clear the shelf" hidden>Clear</button>
+        <button id="hide" class="icon" title="Hide">×</button>
+      </header>
+      <p id="empty">Drop files here to keep them handy.<br />Drag them out when you need them.</p>
+      <ul id="items"></ul>
+    </main>
+    <script type="module" src="/src/shelf.js"></script>
+  </body>
+</html>

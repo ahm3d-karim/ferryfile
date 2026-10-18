@@ -22,6 +22,7 @@ pub const DROPPED_EVENT: &str = "skiff-dropped";
 
 pub fn install(window: &WebviewWindow) {
     let app = window.app_handle().clone();
+    let label = window.label().to_string();
     let _ = window.with_webview(move |wv| unsafe {
         let Ok(core) = wv.controller().CoreWebView2() else {
             eprintln!("[skiff] drop bridge: no CoreWebView2");
@@ -53,7 +54,7 @@ pub fn install(window: &WebviewWindow) {
                 }
             }
             if !paths.is_empty() {
-                let _ = app.emit_to("drawer", DROPPED_EVENT, paths);
+                let _ = app.emit_to(label.as_str(), DROPPED_EVENT, paths);
             }
             Ok(())
         }));

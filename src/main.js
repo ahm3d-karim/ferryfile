@@ -117,6 +117,49 @@ async function renderRecipes() {
   );
 }
 
+/** Runs a quick file action and reports the outcome in the status line. */
+async function fileAction(done, task) {
+  try {
+    const result = await task();
+    if (result !== false) setStatus(done, "ok");
+  } catch (err) {
+    setStatus(String(err), "error");
+  }
+}
+
+/** Actions for any dropped items, folders included; no conversion involved. */
+function fileChips() {
+  const n = paths.length === 1 ? basename(paths[0]) : `${paths.length} items`;
+  const sendTo = (copy) => async () => {
+    const moved = await invoke("send_to_folder", { paths, copy });
+    if (!moved.length) return false; // cancelled
+    if (!copy) await showFiles(moved); // keep acting on the files where they now are
+    return true;
+  };
+  return [
+    chip("Copy path", () => fileAction("Path copied", () => invoke("copy_paths", { paths })), {
+      title: "Copy the full path(s) as text",
+      search: "file copy path",
+    }),
+    chip("Copy", () => fileAction(`Copied ${n} — paste in Explorer`, () => invoke("copy_files", { paths })), {
+      title: "Put the files on the clipboard",
+      search: "file copy clipboard",
+    }),
+    chip("Show in Explorer", () => fileAction("", () => invoke("reveal", { path: paths[0] })), {
+      search: "file show explorer reveal folder",
+    }),
+    chip("Terminal here", () => fileAction("", () => invoke("open_terminal", { path: paths[0] })), {
+      search: "file terminal console powershell",
+    }),
+    chip("Move to…", () => fileAction(`Moved ${n}`, sendTo(false)), { search: "file move folder" }),
+    chip("Copy to…", () => fileAction(`Copied ${n}`, sendTo(true)), { search: "file copy to folder duplicate" }),
+    chip("Add to shelf", () => fileAction(`${n} added to the shelf`, () => invoke("shelf_add", { paths })), {
+      title: "Keep these handy in the floating shelf",
+      search: "file shelf float keep",
+    }),
+  ];
+}
+
 async function renderActions() {
   // Actions come from the first file; other files get them if they support the same id.
   const [actions, combined] = await Promise.all([
@@ -139,13 +182,14 @@ async function renderActions() {
   const groups = [
     ...[...Map.groupBy(combined, (a) => a.group)].map(([name, items]) => [name, items.map(combineChip)]),
     ...[...Map.groupBy(actions, (a) => a.group)].map(([name, items]) => [name, items.map(actionChip)]),
+    ["File", fileChips()],
   ];
   actionsEl.replaceChildren(
     ...groups.map(([name, chips]) =>
       el("section", {}, [el("h2", { textContent: name }), el("div", { className: "chips" }, chips)]),
     ),
   );
-  return actions.length + combined.length;
+
 }
 
 function applySearch() {
@@ -170,10 +214,9 @@ async function showFiles(dropped) {
   if (!paths.length) return;
 
   searchEl.value = "";
-  const [, actionCount] = await Promise.all([renderRecipes(), renderActions()]);
+  await Promise.all([renderRecipes(), renderActions()]);
   toolsEl.hidden = false;
   applySearch();
-  if (!actionCount) setStatus("No actions for this file type yet.");
 }
 
 searchEl.addEventListener("input", applySearch);
@@ -285,6 +328,10 @@ for (const input of [searchEl, nameEl]) {
 // ---------------------------------------------------------------- drawer
 
 $("close").addEventListener("click", () => invoke("hide_drawer"));
+$("shelf-btn").addEventListener("click", () => invoke("toggle_shelf"));
+const showShelfCount = (items) => ($("shelf-count").textContent = items.length || "");
+listen("skiff-shelf-changed", (e) => showShelfCount(e.payload));
+invoke("shelf_items").then(showShelfCount);
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (editing) closeEditor();

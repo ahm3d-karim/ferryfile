@@ -1,6 +1,6 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "windows": ["drawer"],
-  "permissions": ["core:default"]
+  "windows": ["drawer", "shelf"],
+  "permissions": ["core:default", "core:window:allow-start-dragging", "drag:default"]
 }

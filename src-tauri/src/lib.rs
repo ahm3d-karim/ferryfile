@@ -1,7 +1,9 @@
 mod drag;
 mod dropbridge;
 mod engine;
+mod files;
 mod recipes;
+mod shelf;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -81,7 +83,22 @@ fn hide_drawer(app: tauri::AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_drag::init())
         .invoke_handler(tauri::generate_handler![
+            files::copy_paths,
+            files::copy_files,
+            files::reveal,
+            files::open_terminal,
+            files::send_to_folder,
+            shelf::shelf_items,
+            shelf::shelf_add,
+            shelf::shelf_remove,
+            shelf::shelf_clear,
+            shelf::show_shelf,
+            shelf::hide_shelf,
+            shelf::toggle_shelf,
+            shelf::drag_icon,
             list_actions,
             run_action,
             combine_actions,
@@ -96,21 +113,27 @@ pub fn run() {
             recipes::run_recipe,
         ])
         .setup(|app| {
+            app.manage(shelf::load(app.handle()));
+
+            let show_shelf = MenuItem::with_id(app, "shelf", "Show shelf", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Skiff", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&quit])?;
+            let menu = Menu::with_items(app, &[&show_shelf, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Skiff")
                 .menu(&menu)
-                .on_menu_event(|app, ev| {
-                    if ev.id.as_ref() == "quit" {
-                        app.exit(0);
-                    }
+                .on_menu_event(|app, ev| match ev.id.as_ref() {
+                    "shelf" => shelf::show_shelf(app.clone()),
+                    "quit" => app.exit(0),
+                    _ => {}
                 })
                 .build(app)?;
 
             let drawer = app.get_webview_window("drawer").expect("drawer window");
             dropbridge::install(&drawer);
+            if let Some(shelf_window) = app.get_webview_window("shelf") {
+                dropbridge::install(&shelf_window);
+            }
             drag::set_focusable(&drawer, false);
             drag::start(app.handle().clone());
             Ok(())

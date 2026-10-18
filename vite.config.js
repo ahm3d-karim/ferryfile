@@ -7,5 +7,9 @@ export default defineConfig({
     strictPort: true,
     watch: { ignored: ["**/src-tauri/**"] },
   },
-  build: { target: "chrome105", outDir: "dist" },
+  build: {
+    target: "chrome105",
+    outDir: "dist",
+    rollupOptions: { input: { drawer: "index.html", shelf: "shelf.html" } },
+  },
 });

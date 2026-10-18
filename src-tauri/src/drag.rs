@@ -23,7 +23,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 const DRAG_THRESHOLD_PX: i32 = 12;
-const DRAWER_WIDTH_LOGICAL: f64 = 340.0;
+pub(crate) const DRAWER_WIDTH_LOGICAL: f64 = 340.0;
 /// Only react to drags that start in the shell (Explorer / desktop).
 const SHELL_CLASSES: &[&str] = &["CabinetWClass", "WorkerW", "Progman", "SHELLDLL_DefView"];
 

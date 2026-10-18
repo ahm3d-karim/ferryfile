@@ -27,6 +27,22 @@
         "visible": false,
         "focus": false,
         "dragDropEnabled": false
+      },
+      {
+        "label": "shelf",
+        "title": "Skiff Shelf",
+        "url": "shelf.html",
+        "width": 260,
+        "height": 340,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "visible": false,
+        "focus": false,
+        "dragDropEnabled": false
       }
     ],
     "security": { "csp": null }
