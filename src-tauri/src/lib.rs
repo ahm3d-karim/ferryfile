@@ -27,7 +27,7 @@ struct ProgressPayload {
 pub(crate) fn emit_progress(app: &tauri::AppHandle, path: &str, fraction: f32) {
     let _ = app.emit_to(
         "drawer",
-        "skiff-progress",
+        "ferryfile-progress",
         ProgressPayload { path: path.to_string(), fraction },
     );
 }
@@ -131,11 +131,11 @@ pub fn run() {
 
             let show_shelf = MenuItem::with_id(app, "shelf", "Show shelf", true, None::<&str>)?;
             let open_settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit Skiff", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit Ferryfile", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_shelf, &open_settings, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Skiff — drag a file from Explorer")
+                .tooltip("Ferryfile — drag a file from Explorer")
                 .menu(&menu)
                 .on_menu_event(|app, ev| match ev.id.as_ref() {
                     "shelf" => shelf::show_shelf(app.clone()),
@@ -166,5 +166,5 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running Skiff");
+        .expect("error while running Ferryfile");
 }

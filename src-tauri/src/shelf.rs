@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State};
 
-const CHANGED_EVENT: &str = "skiff-shelf-changed";
+const CHANGED_EVENT: &str = "ferryfile-shelf-changed";
 
 pub struct Shelf(Mutex<Vec<String>>);
 
@@ -122,7 +122,7 @@ pub fn drag_icon(app: AppHandle) -> Result<String, String> {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let size = 48u32;
         let img = image::RgbaImage::from_fn(size, size, |x, y| {
-            // Rounded square in Skiff's teal.
+            // Rounded square in Ferryfile's teal.
             let (cx, cy) = (x.min(size - 1 - x), y.min(size - 1 - y));
             let r = 10u32;
             let outside = cx < r && cy < r && (r - cx).pow(2) + (r - cy).pow(2) > r * r;

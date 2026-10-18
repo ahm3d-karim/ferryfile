@@ -1,14 +1,14 @@
 # Downloads an LGPL ffmpeg build (BtbN/FFmpeg-Builds, win64) and installs it as
-# Skiff's Tauri sidecar: src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
+# Ferryfile's Tauri sidecar: src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
 #
-# LGPL builds omit GPL encoders such as x264; Skiff falls back to h264_mf
+# LGPL builds omit GPL encoders such as x264; Ferryfile falls back to h264_mf
 # (Windows Media Foundation) for H.264.
 $ErrorActionPreference = 'Stop'
 
 $url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip'
 $root = Split-Path -Parent $PSScriptRoot
 $dest = Join-Path $root 'src-tauri\binaries\ffmpeg-x86_64-pc-windows-msvc.exe'
-$tmp = Join-Path ([IO.Path]::GetTempPath()) ("skiff-ffmpeg-" + [guid]::NewGuid())
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("ferryfile-ffmpeg-" + [guid]::NewGuid())
 
 New-Item -ItemType Directory -Force $tmp | Out-Null
 try {

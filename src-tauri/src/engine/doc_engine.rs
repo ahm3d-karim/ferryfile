@@ -130,7 +130,7 @@ mod tests {
     #[test]
     #[ignore]
     fn markdown_round_trip() {
-        let dir = std::env::temp_dir().join(format!("skiff-doc-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ferryfile-doc-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let md = dir.join("notes.md");
         std::fs::write(&md, "# Title\n\nSome **bold** text.\n").unwrap();

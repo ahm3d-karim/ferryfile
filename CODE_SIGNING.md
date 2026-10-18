@@ -5,7 +5,7 @@ certificate by [SignPath Foundation](https://signpath.org/).
 
 ## What is signed
 
-Only Skiff's own release installer (`Skiff_<version>_x64-setup.exe`) is
+Only Ferryfile's own release installer (`Ferryfile_<version>_x64-setup.exe`) is
 signed. It is built from this repository's source by GitHub Actions
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)) when a
 version tag (`v*`) is pushed, then submitted to SignPath for signing. Nothing
@@ -37,14 +37,14 @@ This program will not transfer any information to other networked systems
 unless specifically requested by the user or the person installing or
 operating it.
 
-Skiff converts files entirely on your computer; it has no telemetry, update
-checks or accounts. Optional tools that Skiff can use when you have installed
+Ferryfile converts files entirely on your computer; it has no telemetry, update
+checks or accounts. Optional tools that Ferryfile can use when you have installed
 them yourself (Microsoft Office, LibreOffice, Docling) are governed by their
-own privacy policies. Skiff's interface runs in Microsoft Edge WebView2, a
+own privacy policies. Ferryfile's interface runs in Microsoft Edge WebView2, a
 Windows component whose diagnostic data follows your Windows privacy
 settings.
 
 ## Uninstalling
 
-Skiff installs per user. Remove it from **Settings → Apps → Installed apps →
-Skiff → Uninstall**, or run `uninstall.exe` in its install folder.
+Ferryfile installs per user. Remove it from **Settings → Apps → Installed apps →
+Ferryfile → Uninstall**, or run `uninstall.exe` in its install folder.

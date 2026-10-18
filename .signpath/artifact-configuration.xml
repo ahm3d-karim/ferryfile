@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  SignPath artifact configuration for Skiff releases.
+  SignPath artifact configuration for Ferryfile releases.
   Paste this into the SignPath project (Artifact configurations → New).
 
   The release workflow uploads the NSIS installer as a single file
   (`archive: false`), so the root element is the PE file itself. The
-  metadata restrictions make SignPath refuse anything that isn't the Skiff
+  metadata restrictions make SignPath refuse anything that isn't the Ferryfile
   installer for the version being released.
 -->
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
   <parameters>
     <parameter name="version" required="true" />
   </parameters>
-  <pe-file product-name="Skiff" product-version="${version}">
+  <pe-file product-name="Ferryfile" product-version="${version}">
     <authenticode-sign />
   </pe-file>
 </artifact-configuration>

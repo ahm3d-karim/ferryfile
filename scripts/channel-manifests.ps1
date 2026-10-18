@@ -4,24 +4,24 @@
 #   ./scripts/channel-manifests.ps1 -Tag v0.1.0
 #
 # Output:
-#   packaging/winget/manifests/a/AhmadKarim/Skiff/<version>/*.yaml  (submit to microsoft/winget-pkgs)
-#   packaging/scoop/skiff.json                                     (copy into the Scoop bucket)
+#   packaging/winget/manifests/f/Ferryfile/Ferryfile/<version>/*.yaml  (submit to microsoft/winget-pkgs)
+#   packaging/scoop/ferryfile.json                                     (copy into the Scoop bucket)
 param([Parameter(Mandatory)][string]$Tag)
 $ErrorActionPreference = 'Stop'
 
-$repo = 'ahm3d-karim/skiff'
-$id = 'AhmadKarim.Skiff'
+$repo = 'ahm3d-karim/ferryfile'
+$id = 'Ferryfile.Ferryfile'
 $schema = '1.10.0'
 $version = $Tag.TrimStart('v')
 $root = Split-Path -Parent $PSScriptRoot
 $base = "https://github.com/$repo/releases/download/$Tag"
-$setup = "Skiff_${version}_x64-setup.exe"
-$portable = "Skiff_${version}_x64-portable.zip"
+$setup = "Ferryfile_${version}_x64-setup.exe"
+$portable = "Ferryfile_${version}_x64-portable.zip"
 
 # UTF-8 without a BOM: winget validation and Scoop both prefer it.
 function Write-Text($path, $text) { [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false)) }
 
-$tmp = Join-Path ([IO.Path]::GetTempPath()) ("skiff-manifests-" + [guid]::NewGuid())
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("ferryfile-manifests-" + [guid]::NewGuid())
 New-Item -ItemType Directory $tmp | Out-Null
 try {
     gh release download $Tag --repo $repo --pattern '*.sha256' --dir $tmp
@@ -35,7 +35,7 @@ try {
 }
 
 # --- winget -----------------------------------------------------------------
-$wingetDir = Join-Path $root "packaging\winget\manifests\a\AhmadKarim\Skiff\$version"
+$wingetDir = Join-Path $root "packaging\winget\manifests\f\Ferryfile\Ferryfile\$version"
 New-Item -ItemType Directory -Force $wingetDir | Out-Null
 $header = { param($type) "# yaml-language-server: `$schema=https://aka.ms/winget-manifest.$type.$schema.schema.json`n" }
 
@@ -69,17 +69,18 @@ ManifestVersion: $schema
 PackageIdentifier: $id
 PackageVersion: $version
 PackageLocale: en-US
-Publisher: Ahmad Karim
+Publisher: Ferryfile
+Author: Ahmad Karim
 PublisherUrl: https://github.com/ahm3d-karim
 PublisherSupportUrl: https://github.com/$repo/issues
-PackageName: Skiff
+PackageName: Ferryfile
 PackageUrl: https://github.com/$repo
 License: MIT
 LicenseUrl: https://github.com/$repo/blob/main/LICENSE
 Copyright: Copyright (c) 2026 Ahmad Karim
 ShortDescription: Offline drag-and-drop file converter for Windows.
 Description: Start dragging a file in Explorer and a drawer slides in from the screen edge. Drop the file to convert images, audio, video, PDFs, documents and spreadsheets locally, run saved recipes, or keep files on a floating shelf.
-Moniker: skiff
+Moniker: ferryfile
 Tags:
 - converter
 - file-converter
@@ -100,14 +101,14 @@ $scoop = [ordered]@{
     description  = 'Offline drag-and-drop file converter for Windows'
     homepage     = "https://github.com/$repo"
     license      = 'MIT'
-    notes        = 'Skiff runs in the system tray. Drag a file from Explorer to open the drawer.'
+    notes        = 'Ferryfile runs in the system tray. Drag a file from Explorer to open the drawer.'
     architecture = [ordered]@{ '64bit' = [ordered]@{ url = "$base/$portable"; hash = $portableHash } }
-    shortcuts    = @(, @('skiff.exe', 'Skiff'))
+    shortcuts    = @(, @('ferryfile.exe', 'Ferryfile'))
     checkver     = [ordered]@{ github = "https://github.com/$repo" }
     autoupdate   = [ordered]@{
         architecture = [ordered]@{
             '64bit' = [ordered]@{
-                url  = "https://github.com/$repo/releases/download/v`$version/Skiff_`$version_x64-portable.zip"
+                url  = "https://github.com/$repo/releases/download/v`$version/Ferryfile_`$version_x64-portable.zip"
                 hash = [ordered]@{ url = '$url.sha256' }
             }
         }
@@ -115,7 +116,7 @@ $scoop = [ordered]@{
 }
 $scoopDir = Join-Path $root 'packaging\scoop'
 New-Item -ItemType Directory -Force $scoopDir | Out-Null
-Write-Text (Join-Path $scoopDir 'skiff.json') ($scoop | ConvertTo-Json -Depth 6)
+Write-Text (Join-Path $scoopDir 'ferryfile.json') ($scoop | ConvertTo-Json -Depth 6)
 
 Write-Host "winget manifests: $wingetDir"
-Write-Host "Scoop manifest:   $(Join-Path $scoopDir 'skiff.json')"
+Write-Host "Scoop manifest:   $(Join-Path $scoopDir 'ferryfile.json')"

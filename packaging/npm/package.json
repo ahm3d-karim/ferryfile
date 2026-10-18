@@ -1,20 +1,20 @@
 {
-  "name": "skiff-app",
+  "name": "ferryfile",
   "version": "0.0.0-dev",
-  "description": "Skiff: offline drag-and-drop file converter for Windows. `npx skiff-app` downloads and starts it.",
+  "description": "Ferryfile: offline drag-and-drop file converter for Windows. `npx ferryfile` downloads and starts it.",
   "license": "MIT",
   "author": "Ahmad Karim",
-  "homepage": "https://github.com/ahm3d-karim/skiff#readme",
+  "homepage": "https://github.com/ahm3d-karim/ferryfile#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ahm3d-karim/skiff.git",
+    "url": "git+https://github.com/ahm3d-karim/ferryfile.git",
     "directory": "packaging/npm"
   },
-  "bugs": "https://github.com/ahm3d-karim/skiff/issues",
+  "bugs": "https://github.com/ahm3d-karim/ferryfile/issues",
   "keywords": ["file-converter", "windows", "drag-and-drop", "ffmpeg", "pdf", "pandoc", "tauri"],
   "type": "module",
   "bin": {
-    "skiff": "bin/skiff.js"
+    "ferryfile": "bin/ferryfile.js"
   },
   "files": ["bin", "release.json", "README.md", "LICENSE"],
   "os": ["win32"],

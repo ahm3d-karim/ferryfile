@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn chain_keeps_only_final_file() {
-        let dir = std::env::temp_dir().join(format!("skiff-chain-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ferryfile-chain-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let input = dir.join("pic.png");
         image::RgbaImage::from_pixel(40, 40, image::Rgba([1, 2, 3, 255])).save(&input).unwrap();

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Launcher for Skiff. On first run it downloads the portable build for this
+// Launcher for Ferryfile. On first run it downloads the portable build for this
 // package's version from GitHub Releases, checks its SHA-256, unpacks it to
-// %LOCALAPPDATA%\skiff-app\<version>, then starts Skiff in the background.
+// %LOCALAPPDATA%\ferryfile\<version>, then starts Ferryfile in the background.
 // No install scripts run during `npm install`; everything happens here.
 
 import { createHash } from "node:crypto";
@@ -12,22 +12,22 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 const release = JSON.parse(readFileSync(new URL("../release.json", import.meta.url), "utf8"));
-const base = join(process.env.LOCALAPPDATA ?? join(process.env.USERPROFILE ?? ".", "AppData", "Local"), "skiff-app");
+const base = join(process.env.LOCALAPPDATA ?? join(process.env.USERPROFILE ?? ".", "AppData", "Local"), "ferryfile");
 const dir = join(base, release.version);
-const exe = join(dir, "skiff.exe");
+const exe = join(dir, "ferryfile.exe");
 
 const args = process.argv.slice(2);
 if (args.includes("--help") || args.includes("-h")) {
-  console.log(`skiff ${release.version}: offline drag-and-drop file converter for Windows
+  console.log(`ferryfile ${release.version}: offline drag-and-drop file converter for Windows
 
 Usage:
-  skiff              download Skiff if needed, then start it (it lives in the tray)
-  skiff --install    download Skiff without starting it
-  skiff --path       print where Skiff is installed
-  skiff --version    print the version
+  ferryfile              download Ferryfile if needed, then start it (it lives in the tray)
+  ferryfile --install    download Ferryfile without starting it
+  ferryfile --path       print where Ferryfile is installed
+  ferryfile --version    print the version
 
-Skiff is ~120 MB on first run (it includes FFmpeg, pandoc and PDFium).
-More: https://github.com/ahm3d-karim/skiff`);
+Ferryfile is ~120 MB on first run (it includes FFmpeg, pandoc and PDFium).
+More: https://github.com/ahm3d-karim/ferryfile`);
   process.exit(0);
 }
 if (args.includes("--version") || args.includes("-v")) {
@@ -35,7 +35,7 @@ if (args.includes("--version") || args.includes("-v")) {
   process.exit(0);
 }
 if (process.platform !== "win32" || process.arch !== "x64") {
-  console.error("Skiff runs on 64-bit Windows only.");
+  console.error("Ferryfile runs on 64-bit Windows only.");
   process.exit(1);
 }
 
@@ -44,9 +44,9 @@ async function download() {
   const tmp = join(base, `.download-${process.pid}`);
   rmSync(tmp, { recursive: true, force: true });
   mkdirSync(tmp);
-  const zip = join(tmp, "skiff.zip");
+  const zip = join(tmp, "ferryfile.zip");
 
-  console.error(`Downloading Skiff ${release.version} (first run only)…`);
+  console.error(`Downloading Ferryfile ${release.version} (first run only)…`);
   const res = await fetch(release.url);
   if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status} for ${release.url}`);
   const total = Number(res.headers.get("content-length")) || 0;
@@ -89,13 +89,13 @@ try {
   }
   if (!existsSync(exe)) await download();
   if (args.includes("--install")) {
-    console.error(`Skiff ${release.version} is installed in ${dir}`);
+    console.error(`Ferryfile ${release.version} is installed in ${dir}`);
     process.exit(0);
   }
-  // Detached so Skiff keeps running in the tray after this terminal closes.
+  // Detached so Ferryfile keeps running in the tray after this terminal closes.
   spawn(exe, [], { detached: true, stdio: "ignore", cwd: dir }).unref();
-  console.error("Skiff is running in the tray. Drag a file from Explorer to use it.");
+  console.error("Ferryfile is running in the tray. Drag a file from Explorer to use it.");
 } catch (err) {
-  console.error(`skiff: ${err.message}`);
+  console.error(`ferryfile: ${err.message}`);
   process.exit(1);
 }

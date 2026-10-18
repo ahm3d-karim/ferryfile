@@ -62,7 +62,7 @@ impl World for DocWorld {
     fn file(&self, id: FileId) -> FileResult<Bytes> {
         let rooted = id.get();
         if !matches!(rooted.root(), VirtualRoot::Project) {
-            return Err(FileError::Other(Some("packages aren't available in Skiff".into())));
+            return Err(FileError::Other(Some("packages aren't available in Ferryfile".into())));
         }
         let path = rooted.vpath().realize(&self.root)?;
         std::fs::read(&path).map(Bytes::new).map_err(|e| FileError::from_io(e, &path))

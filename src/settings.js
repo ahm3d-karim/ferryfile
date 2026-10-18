@@ -18,7 +18,7 @@ function render() {
   radio("delay", String(state.openDelayMs >= 1 ? 400 : 0));
   radio("output", state.outputDir ? "folder" : "next");
   folderPath.textContent = state.outputDir ?? "";
-  $("about").textContent = `Skiff ${state.version} · settings in ${state.configDir}`;
+  $("about").textContent = `Ferryfile ${state.version} · settings in ${state.configDir}`;
 }
 
 async function save() {

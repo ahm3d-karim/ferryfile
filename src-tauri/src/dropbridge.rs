@@ -16,16 +16,16 @@ use webview2_com::{take_pwstr, WebMessageReceivedEventHandler};
 use windows::core::{Interface, PWSTR};
 
 /// Message the page posts along with the dropped files.
-const DROP_MESSAGE: &str = "skiff-drop";
+const DROP_MESSAGE: &str = "ferryfile-drop";
 /// Event emitted to the page with the resolved paths.
-pub const DROPPED_EVENT: &str = "skiff-dropped";
+pub const DROPPED_EVENT: &str = "ferryfile-dropped";
 
 pub fn install(window: &WebviewWindow) {
     let app = window.app_handle().clone();
     let label = window.label().to_string();
     let _ = window.with_webview(move |wv| unsafe {
         let Ok(core) = wv.controller().CoreWebView2() else {
-            eprintln!("[skiff] drop bridge: no CoreWebView2");
+            eprintln!("[ferryfile] drop bridge: no CoreWebView2");
             return;
         };
         let handler = WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
@@ -60,7 +60,7 @@ pub fn install(window: &WebviewWindow) {
         }));
         let mut token = 0i64;
         if let Err(e) = core.add_WebMessageReceived(&handler, &mut token) {
-            eprintln!("[skiff] drop bridge: failed to register handler: {e}");
+            eprintln!("[ferryfile] drop bridge: failed to register handler: {e}");
         }
     });
 }
