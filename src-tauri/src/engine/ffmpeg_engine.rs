@@ -8,10 +8,10 @@
 use std::collections::{HashSet, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use super::{ext_of, output_path, Action, Engine, Progress};
+use super::{ext_of, find_sidecar, output_path, tool_command, Action, Engine, Progress};
 
 const AUDIO_IN: &[&str] = &["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff", "aif", "wma"];
 const VIDEO_IN: &[&str] = &["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv"];
@@ -54,48 +54,22 @@ impl Ffmpeg {
     }
 }
 
-fn command(exe: &Path) -> Command {
-    let mut cmd = Command::new(exe);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    cmd
-}
-
-fn candidates() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
-        out.push(dir.join("ffmpeg.exe"));
-    }
-    // Dev fallback: the sidecar source in the repo.
-    out.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries/ffmpeg-x86_64-pc-windows-msvc.exe"));
-    out.push(PathBuf::from("ffmpeg"));
-    out
-}
-
 fn ffmpeg() -> Result<&'static Ffmpeg, String> {
     static FFMPEG: OnceLock<Option<Ffmpeg>> = OnceLock::new();
     FFMPEG
         .get_or_init(|| {
-            candidates().into_iter().find_map(|exe| {
-                let out = command(&exe).args(["-hide_banner", "-encoders"]).output().ok()?;
-                if !out.status.success() {
-                    return None;
-                }
-                // Lines look like " V....D libx264   libx264 H.264 ...".
-                let encoders = String::from_utf8_lossy(&out.stdout)
-                    .lines()
-                    .filter_map(|l| {
-                        let mut parts = l.split_whitespace();
-                        let flags = parts.next()?;
-                        (flags.len() == 6).then(|| parts.next().map(str::to_string)).flatten()
-                    })
-                    .collect();
-                Some(Ffmpeg { exe, encoders })
-            })
+            let exe = find_sidecar("ffmpeg", "-version")?;
+            let out = tool_command(&exe).args(["-hide_banner", "-encoders"]).output().ok()?;
+            // Lines look like " V....D libx264   libx264 H.264 ...".
+            let encoders = String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .filter_map(|l| {
+                    let mut parts = l.split_whitespace();
+                    let flags = parts.next()?;
+                    (flags.len() == 6).then(|| parts.next().map(str::to_string)).flatten()
+                })
+                .collect();
+            Some(Ffmpeg { exe, encoders })
         })
         .as_ref()
         .ok_or_else(|| "ffmpeg wasn't found. Run scripts/fetch-ffmpeg.ps1 or install ffmpeg on PATH.".into())
@@ -172,7 +146,7 @@ fn parse_timestamp(s: &str) -> Option<f64> {
 }
 
 fn run_ffmpeg(ff: &Ffmpeg, input: &Path, args: &[String], out: &Path, progress: Progress) -> Result<(), String> {
-    let mut child = command(&ff.exe)
+    let mut child = tool_command(&ff.exe)
         .args(["-hide_banner", "-nostdin", "-n", "-i"])
         .arg(input)
         .args(args)
@@ -311,7 +285,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
 
         let gen = |out: &Path, args: &[&str]| {
-            let ok = command(&ff.exe)
+            let ok = tool_command(&ff.exe)
                 .args(["-hide_banner", "-loglevel", "error", "-y"])
                 .args(args)
                 .arg(out)

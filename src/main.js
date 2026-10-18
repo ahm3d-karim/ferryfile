@@ -59,16 +59,16 @@ listen("skiff-progress", (e) => {
   if (running) setProgress((running.index + e.payload.fraction) / running.count);
 });
 
-/** Runs `job(path)` for every dropped file, with progress and status. */
-async function runJob(label, job) {
+/** Runs `job(path)` for every target (by default each dropped file), with progress and status. */
+async function runJob(label, job, targets = paths) {
   if (running) return;
   setStatus(`${label}…`, "busy");
   toolsEl.classList.add("disabled");
   setProgress(0);
   const results = [];
   try {
-    for (const [index, p] of paths.entries()) {
-      running = { index, count: paths.length };
+    for (const [index, p] of targets.entries()) {
+      running = { index, count: targets.length };
       try {
         results.push(basename(await job(p)));
       } catch (err) {
@@ -119,25 +119,33 @@ async function renderRecipes() {
 
 async function renderActions() {
   // Actions come from the first file; other files get them if they support the same id.
-  const actions = await invoke("list_actions", { path: paths[0] });
-  const groups = Map.groupBy(actions, (a) => a.group);
+  const [actions, combined] = await Promise.all([
+    invoke("list_actions", { path: paths[0] }),
+    paths.length > 1 ? invoke("combine_actions", { paths }) : [],
+  ]);
+
+  // Combine actions take all dropped files at once and produce one output.
+  const combineChip = (a) =>
+    chip(
+      a.label,
+      () => runJob(`${a.group}: ${a.label}`, () => invoke("run_combine", { actionId: a.id, paths }), [paths[0]]),
+      { title: `All ${paths.length} files, in drop order`, search: `${a.group} ${a.label}` },
+    );
+  const actionChip = (a) =>
+    chip(a.label, () => runJob(`${a.group}: ${a.label}`, (p) => invoke("run_action", { actionId: a.id, path: p })), {
+      search: `${a.group} ${a.label}`,
+    });
+
+  const groups = [
+    ...[...Map.groupBy(combined, (a) => a.group)].map(([name, items]) => [name, items.map(combineChip)]),
+    ...[...Map.groupBy(actions, (a) => a.group)].map(([name, items]) => [name, items.map(actionChip)]),
+  ];
   actionsEl.replaceChildren(
-    ...[...groups].map(([name, items]) =>
-      el("section", {}, [
-        el("h2", { textContent: name }),
-        el(
-          "div",
-          { className: "chips" },
-          items.map((a) =>
-            chip(a.label, () => runJob(`${a.group}: ${a.label}`, (p) => invoke("run_action", { actionId: a.id, path: p })), {
-              search: `${a.group} ${a.label}`,
-            }),
-          ),
-        ),
-      ]),
+    ...groups.map(([name, chips]) =>
+      el("section", {}, [el("h2", { textContent: name }), el("div", { className: "chips" }, chips)]),
     ),
   );
-  return actions.length;
+  return actions.length + combined.length;
 }
 
 function applySearch() {

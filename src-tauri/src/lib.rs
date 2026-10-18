@@ -40,6 +40,24 @@ async fn run_action(app: tauri::AppHandle, action_id: String, path: String) -> R
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+fn combine_actions(paths: Vec<String>) -> Vec<engine::Action> {
+    let paths: Vec<_> = paths.into_iter().map(std::path::PathBuf::from).collect();
+    engine::list_combine_actions(&paths)
+}
+
+#[tauri::command]
+async fn run_combine(app: tauri::AppHandle, action_id: String, paths: Vec<String>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let first = paths.first().cloned().unwrap_or_default();
+        let report = |f: f32| emit_progress(&app, &first, f);
+        let inputs: Vec<_> = paths.iter().map(std::path::PathBuf::from).collect();
+        engine::run_combine(&action_id, &inputs, &report).map(|p| p.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Keep the drawer open (cancels the pending auto-hide after a drag ends).
 #[tauri::command]
 fn pin_drawer() {
@@ -66,6 +84,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_actions,
             run_action,
+            combine_actions,
+            run_combine,
             pin_drawer,
             focus_drawer,
             hide_drawer,

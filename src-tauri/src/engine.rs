@@ -7,8 +7,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+mod doc_engine;
 mod ffmpeg_engine;
 mod image_engine;
+mod office_engine;
+mod pdf_engine;
 
 /// Reports progress of a running action as a fraction in `0.0..=1.0`.
 pub type Progress<'a> = &'a dyn Fn(f32);
@@ -33,17 +36,34 @@ impl Action {
     }
 }
 
+/// Extension used for actions that write a folder of files (e.g. PDF pages).
+/// No engine accepts it, so such a step can only end a chain.
+pub const FOLDER_EXT: &str = "folder";
+
 pub trait Engine: Send + Sync {
     fn actions(&self, path: &Path) -> Vec<Action>;
     /// Extension of the file `action_id` produces from `input`.
     fn output_ext(&self, action_id: &str, input: &Path) -> Option<String>;
     fn run(&self, action_id: &str, input: &Path, progress: Progress) -> Result<PathBuf, String>;
+
+    /// Actions that take several files at once and produce one output.
+    fn combine_actions(&self, _inputs: &[PathBuf]) -> Vec<Action> {
+        Vec::new()
+    }
+    fn combine(&self, action_id: &str, _inputs: &[PathBuf], _progress: Progress) -> Result<PathBuf, String> {
+        Err(format!("'{action_id}' isn't a combine action"))
+    }
 }
 
+/// Engines in priority order: when two offer the same action id for a file,
+/// the first one wins.
 fn engines() -> Vec<Box<dyn Engine>> {
     vec![
         Box::new(image_engine::ImageEngine),
         Box::new(ffmpeg_engine::FfmpegEngine),
+        Box::new(pdf_engine::PdfEngine),
+        Box::new(office_engine::OfficeEngine),
+        Box::new(doc_engine::DocEngine),
     ]
 }
 
@@ -55,7 +75,29 @@ pub fn ext_of(path: &Path) -> String {
 }
 
 pub fn list_actions(path: &Path) -> Vec<Action> {
-    engines().iter().flat_map(|e| e.actions(path)).collect()
+    let mut seen = std::collections::HashSet::new();
+    engines()
+        .iter()
+        .flat_map(|e| e.actions(path))
+        .filter(|a| seen.insert(a.id.clone()))
+        .collect()
+}
+
+pub fn list_combine_actions(inputs: &[PathBuf]) -> Vec<Action> {
+    let mut seen = std::collections::HashSet::new();
+    engines()
+        .iter()
+        .flat_map(|e| e.combine_actions(inputs))
+        .filter(|a| seen.insert(a.id.clone()))
+        .collect()
+}
+
+pub fn run_combine(action_id: &str, inputs: &[PathBuf], progress: Progress) -> Result<PathBuf, String> {
+    let engine = engines()
+        .into_iter()
+        .find(|e| e.combine_actions(inputs).iter().any(|a| a.id == action_id))
+        .ok_or_else(|| format!("No engine can run '{action_id}' on these files"))?;
+    engine.combine(action_id, inputs, progress)
 }
 
 /// The engine offering `action_id` for `input`, plus the action itself.
@@ -136,6 +178,60 @@ pub fn output_path(input: &Path, suffix: &str, ext: &str) -> PathBuf {
         n += 1;
     }
     candidate
+}
+
+/// Creates a new, uniquely named `<stem><suffix>` folder next to the input.
+pub fn output_dir(input: &Path, suffix: &str) -> Result<PathBuf, String> {
+    let dir = input.parent().unwrap_or_else(|| Path::new("."));
+    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+    let mut candidate = dir.join(format!("{stem}{suffix}"));
+    let mut n = 2;
+    while candidate.exists() {
+        candidate = dir.join(format!("{stem}{suffix} ({n})"));
+        n += 1;
+    }
+    std::fs::create_dir(&candidate).map_err(|e| e.to_string())?;
+    Ok(candidate)
+}
+
+/// A `Command` for a helper tool that never flashes a console window.
+pub fn tool_command(exe: &Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new(exe);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
+/// Where to look for a bundled file: next to the app (where Tauri puts
+/// sidecars and resources), then the repo's `binaries/` folder in dev builds.
+pub fn bundled_candidates(installed_name: &str, dev_name: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
+        out.push(dir.join(installed_name));
+    }
+    out.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries").join(dev_name));
+    out
+}
+
+/// Sidecar executable `name` (bundled, else on PATH) that runs with `probe_arg`.
+pub fn find_sidecar(name: &str, probe_arg: &str) -> Option<PathBuf> {
+    let mut candidates = bundled_candidates(
+        &format!("{name}.exe"),
+        &format!("{name}-x86_64-pc-windows-msvc.exe"),
+    );
+    candidates.push(PathBuf::from(name));
+    candidates.into_iter().find(|exe| {
+        tool_command(exe)
+            .arg(probe_arg)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    })
 }
 
 #[cfg(test)]
