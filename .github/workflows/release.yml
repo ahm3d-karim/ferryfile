@@ -1,14 +1,18 @@
 name: Release
 
-# Push a tag like v0.2.0 to build the installer into a draft GitHub release.
-# Signing uses the SKIFF_SIGN_PFX / SKIFF_SIGN_PFX_PASSWORD secrets when set
-# (see scripts/sign.ps1); without them the installer is built unsigned.
+# Push a tag like v0.2.0 to build the installer and draft a GitHub release.
+#
+# Signing (see CODE_SIGNING.md): when the repository variable
+# SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN are set, the
+# installer is submitted to SignPath and the job waits for a maintainer to
+# approve the signing request. Without them, an unsigned installer is drafted.
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release:
@@ -43,13 +47,63 @@ jobs:
 
       - run: npm ci
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SKIFF_SIGN_PFX: ${{ secrets.SKIFF_SIGN_PFX }}
-          SKIFF_SIGN_PFX_PASSWORD: ${{ secrets.SKIFF_SIGN_PFX_PASSWORD }}
+      - name: Check tag matches app version
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne "${{ github.ref_name }}") {
+            throw "Tag ${{ github.ref_name }} doesn't match app version $version in tauri.conf.json"
+          }
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Build installer
+        run: npx tauri build
+
+      - name: Locate installer
+        id: installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload unsigned installer
+        id: unsigned
+        uses: actions/upload-artifact@v7
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Skiff ${{ github.ref_name }}
-          releaseBody: See the commits since the previous release.
-          releaseDraft: true
+          name: ${{ steps.installer.outputs.name }}
+          path: ${{ steps.installer.outputs.path }}
+          archive: false
+
+      - name: Sign with SignPath
+        id: sign
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'skiff' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(env.APP_VERSION) }}
+          wait-for-completion: true
+          # Each release needs a manual approval in SignPath; approve within 2 hours.
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed
+          skip-decompress: true
+
+      - name: Draft GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $signed = Join-Path signed "${{ steps.installer.outputs.name }}"
+          if (Test-Path $signed) {
+            $file = $signed
+            $note = "Signed installer. Free code signing provided by SignPath.io, certificate by SignPath Foundation."
+          } else {
+            $file = "${{ steps.installer.outputs.path }}"
+            $note = "Unsigned installer: Windows SmartScreen may warn on first run (More info, then Run anyway)."
+          }
+          gh release create "${{ github.ref_name }}" $file --draft --title "Skiff ${{ github.ref_name }}" --generate-notes --notes "$note"
