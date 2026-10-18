@@ -153,8 +153,8 @@ function fileChips() {
     }),
     chip("Move to…", () => fileAction(`Moved ${n}`, sendTo(false)), { search: "file move folder" }),
     chip("Copy to…", () => fileAction(`Copied ${n}`, sendTo(true)), { search: "file copy to folder duplicate" }),
-    chip("Add to shelf", () => fileAction(`${n} added to the shelf`, () => invoke("shelf_add", { paths })), {
-      title: "Keep these handy in the floating shelf",
+    chip("Add to shelf", () => fileAction(`${n} added to the shelf`, () => invoke("shelf_add", { id: null, paths })), {
+      title: "Keep these handy on a floating shelf (tip: shake while dragging to open one)",
       search: "file shelf float keep",
     }),
   ];
@@ -328,11 +328,11 @@ for (const input of [searchEl, nameEl]) {
 // ---------------------------------------------------------------- drawer
 
 $("close").addEventListener("click", () => invoke("hide_drawer"));
-$("shelf-btn").addEventListener("click", () => invoke("toggle_shelf"));
+$("shelf-btn").addEventListener("click", () => invoke("toggle_shelves"));
 $("settings-btn").addEventListener("click", () => invoke("open_settings"));
-const showShelfCount = (items) => ($("shelf-count").textContent = items.length || "");
-listen("ferryfile-shelf-changed", (e) => showShelfCount(e.payload));
-invoke("shelf_items").then(showShelfCount);
+const showShelfCount = (total) => ($("shelf-count").textContent = total || "");
+listen("ferryfile-shelves-count", (e) => showShelfCount(e.payload));
+invoke("shelves_count").then(showShelfCount);
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (editing) closeEditor();

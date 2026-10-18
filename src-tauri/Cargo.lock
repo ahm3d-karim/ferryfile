@@ -1481,6 +1481,7 @@ dependencies = [
  "typst-pdf",
  "webview2-com",
  "windows 0.62.2",
+ "zip 9.0.5",
 ]
 
 [[package]]

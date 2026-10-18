@@ -21,3 +21,6 @@ button.primary { background: var(--teal); border-color: var(--teal); color: #062
 #status.error { color: #fca5a5; }
 footer { margin-top: auto; display: flex; align-items: center; gap: 12px; }
 #about { flex: 1; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.indent { padding-left: 24px; }
+select { margin-left: 8px; font: inherit; font-size: 13px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+select:disabled { opacity: .5; }

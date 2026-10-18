@@ -31,6 +31,18 @@
       </fieldset>
 
       <fieldset>
+        <legend>Shelves</legend>
+        <label><input id="shake" type="checkbox" /> Shake the cursor while dragging to open a shelf</label>
+        <label class="indent">Sensitivity
+          <select id="sensitivity">
+            <option value="gentle">Gentle: small wiggles count</option>
+            <option value="normal">Normal</option>
+            <option value="firm">Firm: fewer accidental shelves</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <fieldset>
         <legend>Save converted files</legend>
         <label><input type="radio" name="output" value="next" /> Next to the original</label>
         <label class="folder">

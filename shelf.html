@@ -9,14 +9,26 @@
   <body>
     <main id="shelf">
       <header data-tauri-drag-region>
-        <span data-tauri-drag-region>Shelf</span>
+        <span class="title" data-tauri-drag-region>Shelf</span>
         <span id="count" data-tauri-drag-region></span>
-        <button id="drag-all" title="Drag all items out" hidden>⇲ All</button>
-        <button id="clear" title="Clear the shelf" hidden>Clear</button>
-        <button id="hide" class="icon" title="Hide">×</button>
+        <button id="pin" class="icon" title="Keep this shelf (pinned shelves stay open when emptied)">📌</button>
+        <button id="close" class="icon" title="Close shelf (files stay where they are)">×</button>
       </header>
-      <p id="empty">Drop files here to keep them handy.<br />Drag them out when you need them.</p>
+
+      <p id="empty">Drop files here.<br />Drag them out when you need them.</p>
       <ul id="items"></ul>
+
+      <section id="panel" hidden>
+        <div id="groups"></div>
+      </section>
+
+      <progress id="progress" max="1" value="0" hidden></progress>
+      <p id="status"></p>
+
+      <footer>
+        <button id="drag-all" title="Drag everything out at once" hidden>⇲ Drag all</button>
+        <button id="actions" title="Convert, zip, move or copy everything on this shelf" hidden>Actions ▾</button>
+      </footer>
     </main>
     <script type="module" src="/src/shelf.js"></script>
   </body>

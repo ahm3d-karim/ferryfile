@@ -4,6 +4,7 @@ mod engine;
 mod files;
 mod recipes;
 mod settings;
+mod shake;
 mod shelf;
 
 use tauri::{
@@ -23,19 +24,25 @@ struct ProgressPayload {
     fraction: f32,
 }
 
-/// Sends progress for the file at `path` to the drawer.
-pub(crate) fn emit_progress(app: &tauri::AppHandle, path: &str, fraction: f32) {
+/// Sends progress for the file at `path` to the window that started the job.
+pub(crate) fn emit_progress(app: &tauri::AppHandle, window: &str, path: &str, fraction: f32) {
     let _ = app.emit_to(
-        "drawer",
+        window,
         "ferryfile-progress",
         ProgressPayload { path: path.to_string(), fraction },
     );
 }
 
 #[tauri::command]
-async fn run_action(app: tauri::AppHandle, action_id: String, path: String) -> Result<String, String> {
+async fn run_action(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    action_id: String,
+    path: String,
+) -> Result<String, String> {
+    let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
-        let report = |f: f32| emit_progress(&app, &path, f);
+        let report = |f: f32| emit_progress(&app, &label, &path, f);
         engine::run_action(&action_id, std::path::Path::new(&path), &report)
             .map(|p| p.to_string_lossy().into_owned())
     })
@@ -50,10 +57,16 @@ fn combine_actions(paths: Vec<String>) -> Vec<engine::Action> {
 }
 
 #[tauri::command]
-async fn run_combine(app: tauri::AppHandle, action_id: String, paths: Vec<String>) -> Result<String, String> {
+async fn run_combine(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    action_id: String,
+    paths: Vec<String>,
+) -> Result<String, String> {
+    let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let first = paths.first().cloned().unwrap_or_default();
-        let report = |f: f32| emit_progress(&app, &first, f);
+        let report = |f: f32| emit_progress(&app, &label, &first, f);
         let inputs: Vec<_> = paths.iter().map(std::path::PathBuf::from).collect();
         engine::run_combine(&action_id, &inputs, &report).map(|p| p.to_string_lossy().into_owned())
     })
@@ -104,13 +117,16 @@ pub fn run() {
             files::reveal,
             files::open_terminal,
             files::send_to_folder,
-            shelf::shelf_items,
+            files::zip_items,
+            shelf::shelf_state,
             shelf::shelf_add,
             shelf::shelf_remove,
-            shelf::shelf_clear,
-            shelf::show_shelf,
-            shelf::hide_shelf,
-            shelf::toggle_shelf,
+            shelf::shelf_replace,
+            shelf::shelf_set_pinned,
+            shelf::shelf_close,
+            shelf::shelf_hide,
+            shelf::shelves_count,
+            shelf::toggle_shelves,
             shelf::drag_icon,
             list_actions,
             run_action,
@@ -129,16 +145,25 @@ pub fn run() {
             settings::load(app.handle());
             app.manage(shelf::load(app.handle()));
 
-            let show_shelf = MenuItem::with_id(app, "shelf", "Show shelf", true, None::<&str>)?;
+            let show_shelves = MenuItem::with_id(app, "shelves", "Show shelves", true, None::<&str>)?;
+            let new_shelf = MenuItem::with_id(app, "new-shelf", "New shelf", true, None::<&str>)?;
             let open_settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Ferryfile", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_shelf, &open_settings, &quit])?;
+            let menu = Menu::with_items(app, &[&show_shelves, &new_shelf, &open_settings, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Ferryfile — drag a file from Explorer")
                 .menu(&menu)
                 .on_menu_event(|app, ev| match ev.id.as_ref() {
-                    "shelf" => shelf::show_shelf(app.clone()),
+                    // Creating windows in a menu handler deadlocks on Windows; hop threads.
+                    "shelves" => {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move { shelf::show_all(&app) });
+                    }
+                    "new-shelf" => {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move { shelf::new_shelf(&app) });
+                    }
                     "settings" => settings::open_settings(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
@@ -158,9 +183,6 @@ pub fn run() {
 
             let drawer = app.get_webview_window("drawer").expect("drawer window");
             dropbridge::install(&drawer);
-            if let Some(shelf_window) = app.get_webview_window("shelf") {
-                dropbridge::install(&shelf_window);
-            }
             drag::set_focusable(&drawer, false);
             drag::start(app.handle().clone());
             Ok(())

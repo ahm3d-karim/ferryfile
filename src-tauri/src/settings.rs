@@ -9,6 +9,8 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::shake::Sensitivity;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Side {
@@ -27,11 +29,20 @@ pub struct Settings {
     pub open_delay_ms: u32,
     /// Where converted files go; `None` = next to the original.
     pub output_dir: Option<String>,
+    /// Shaking the cursor mid-drag opens a new shelf at the cursor.
+    pub shake_to_shelf: bool,
+    pub shake_sensitivity: Sensitivity,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { drawer_side: Side::Right, open_delay_ms: 0, output_dir: None }
+        Self {
+            drawer_side: Side::Right,
+            open_delay_ms: 0,
+            output_dir: None,
+            shake_to_shelf: true,
+            shake_sensitivity: Sensitivity::Normal,
+        }
     }
 }
 
@@ -43,6 +54,7 @@ pub fn current() -> Settings {
 
 fn apply(settings: Settings) {
     crate::engine::set_output_dir(settings.output_dir.as_deref().map(PathBuf::from));
+    crate::drag::configure_shake(settings.shake_to_shelf, settings.shake_sensitivity);
     *SETTINGS.write().unwrap() = Some(settings);
 }
 
