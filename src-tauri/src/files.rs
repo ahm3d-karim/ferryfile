@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
 /// Copies the paths as text, one per line.
@@ -106,11 +106,18 @@ fn transfer(source: &Path, dir: &Path, keep_source: bool) -> Result<PathBuf, Str
 /// Asks for a folder, then moves (or copies) the items there. Returns the new
 /// paths, or an empty list if the user cancelled.
 #[tauri::command]
-pub async fn send_to_folder(app: AppHandle, paths: Vec<String>, copy: bool) -> Result<Vec<String>, String> {
-    let mut dialog = app.dialog().file().set_title(if copy { "Copy to…" } else { "Move to…" });
-    if let Some(w) = app.get_webview_window("drawer") {
-        dialog = dialog.set_parent(&w);
-    }
+pub async fn send_to_folder(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    paths: Vec<String>,
+    copy: bool,
+) -> Result<Vec<String>, String> {
+    // Parent the picker to whichever window asked (drawer or a shelf).
+    let dialog = app
+        .dialog()
+        .file()
+        .set_title(if copy { "Copy to…" } else { "Move to…" })
+        .set_parent(&window);
     let Some(folder) = dialog.blocking_pick_folder() else {
         return Ok(Vec::new());
     };
@@ -121,9 +128,90 @@ pub async fn send_to_folder(app: AppHandle, paths: Vec<String>, copy: bool) -> R
         .collect()
 }
 
+/// Adds `path` to the archive under `name`, recursing into folders.
+fn zip_add<W: std::io::Write + std::io::Seek>(
+    zip: &mut zip::ZipWriter<W>,
+    path: &Path,
+    name: &str,
+) -> Result<(), String> {
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let err = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
+    if path.is_dir() {
+        zip.add_directory(format!("{name}/"), options).map_err(|e| err(&e))?;
+        for entry in std::fs::read_dir(path).map_err(|e| err(&e))? {
+            let entry = entry.map_err(|e| err(&e))?;
+            let child = format!("{name}/{}", entry.file_name().to_string_lossy());
+            zip_add(zip, &entry.path(), &child)?;
+        }
+    } else {
+        zip.start_file(name, options).map_err(|e| err(&e))?;
+        let mut file = std::fs::File::open(path).map_err(|e| err(&e))?;
+        std::io::copy(&mut file, zip).map_err(|e| err(&e))?;
+    }
+    Ok(())
+}
+
+/// Zips the items into one archive next to the first one (or in the
+/// configured output folder): `<name>.zip` for one item, `Archive.zip` for
+/// several. Never overwrites.
+pub fn zip_to(paths: &[String]) -> Result<PathBuf, String> {
+    let first = Path::new(paths.first().ok_or("Nothing to zip")?);
+    let stem_source = if paths.len() == 1 {
+        first.to_path_buf()
+    } else {
+        first.with_file_name("Archive")
+    };
+    // Folders have no extension to replace, so give output_path a stand-in.
+    let out = crate::engine::output_path(&stem_source.with_extension("zip"), "", "zip");
+    let file = std::fs::File::create(&out).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let result = paths.iter().try_for_each(|p| {
+        let p = Path::new(p);
+        let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        zip_add(&mut zip, p, &name)
+    });
+    let result = result.and_then(|_| zip.finish().map(|_| ()).map_err(|e| e.to_string()));
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&out);
+        return Err(e);
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn zip_items(paths: Vec<String>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || zip_to(&paths).map(|p| p.to_string_lossy().into_owned()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zips_files_and_folders() {
+        let root = std::env::temp_dir().join(format!("ferryfile-zip-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("photos/2026")).unwrap();
+        std::fs::write(root.join("notes.txt"), "hello").unwrap();
+        std::fs::write(root.join("photos/2026/a.txt"), "a").unwrap();
+        let items = [root.join("notes.txt"), root.join("photos")].map(|p| p.to_string_lossy().into_owned());
+
+        let out = zip_to(&items).unwrap();
+        assert_eq!(out, root.join("Archive.zip"));
+        let again = zip_to(&items).unwrap();
+        assert_eq!(again, root.join("Archive (2).zip"), "must not overwrite");
+
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(&out).unwrap()).unwrap();
+        let mut names: Vec<_> = (0..archive.len()).map(|i| archive.by_index(i).unwrap().name().unwrap().to_string()).collect();
+        names.sort();
+        assert_eq!(names, ["notes.txt", "photos/", "photos/2026/", "photos/2026/a.txt"]);
+
+        let single = zip_to(&items[..1]).unwrap();
+        assert_eq!(single, root.join("notes.zip"));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn transfers_without_overwriting() {

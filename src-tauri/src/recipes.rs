@@ -160,13 +160,19 @@ pub fn delete_recipe(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn run_recipe(app: AppHandle, id: String, path: String) -> Result<String, String> {
+pub async fn run_recipe(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    id: String,
+    path: String,
+) -> Result<String, String> {
+    let label = window.label().to_string();
     let recipe = all(&app)
         .into_iter()
         .find(|r| r.id == id)
         .ok_or("That recipe no longer exists")?;
     tauri::async_runtime::spawn_blocking(move || {
-        let report = |f: f32| crate::emit_progress(&app, &path, f);
+        let report = |f: f32| crate::emit_progress(&app, &label, &path, f);
         engine::run_chain(Path::new(&path), &recipe.steps, &report)
             .map(|p| p.to_string_lossy().into_owned())
     })

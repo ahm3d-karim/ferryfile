@@ -87,12 +87,21 @@ Every drop, including folders, also gets **File** actions:
 | Show in Explorer | Opens the folder with the item selected |
 | Terminal here | Opens Windows Terminal (or PowerShell) in that folder |
 | Move to… / Copy to… | Sends the items to a folder you pick |
-| Add to shelf | Keeps the items on the shelf |
+| Add to shelf | Puts the items on your most recent shelf |
 
-The **shelf** is a small floating window for files you'll need in a moment.
-Drop files on it, then drag them out into any app; dropped items leave the
-shelf. Open it from the **Shelf** button in the drawer or the tray menu. Its
-contents survive restarts.
+**Shelves** are small floating windows for files you'll need in a moment:
+
+- **Shake to open:** while dragging a file, shake the cursor side to side and a
+  new shelf appears right under it. Drop the file in. (Open more from the tray,
+  or the **Shelves** button in the drawer.) While a shelf is open, the drawer
+  stays out of the way.
+- **Drag out** one item or **⇲ Drag all** into any app; items you drag out
+  leave the shelf, and an unpinned shelf closes once it's empty. 📌 pins a
+  shelf to keep it.
+- **Actions** run on everything on the shelf: conversions, recipes, Combine,
+  Zip, Copy, Move to… or Copy to…. Results land back on the same shelf, ready
+  to drag out.
+- Shelves with items survive restarts.
 
 ## Settings
 
@@ -103,6 +112,7 @@ Open **Settings…** from the tray menu or the ⚙ button in the drawer.
 | Start with Windows | On / off |
 | Drawer edge | Right / left |
 | Open the drawer | As soon as you drag, or after a short pause (fewer accidental opens) |
+| Shelves | Shake while dragging to open a shelf on/off, and how firm a shake it takes |
 | Save converted files | Next to the original, or in a folder you choose |
 
 ## Install

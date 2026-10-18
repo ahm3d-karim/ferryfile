@@ -1,11 +1,12 @@
-//! Global drag detection (Windows low-level mouse hook) and drawer show/hide.
+//! Global drag detection (Windows low-level mouse hook): shows the drawer when
+//! a drag starts in Explorer, and opens a shelf at the cursor when the user
+//! shakes it mid-drag.
 //!
-//! The hook only decides *when* to show the drawer. Receiving the dropped
-//! files is handled by Tauri's built-in drag-drop support, which registers the
-//! window as an OLE drop target.
+//! The hook only decides *when* to show things. Receiving the dropped files is
+//! done by the page through WebView2 (see dropbridge.rs).
 
 use std::sync::{
-    atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicU8, Ordering},
     mpsc::{channel, Sender},
     Mutex, OnceLock,
 };
@@ -14,6 +15,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize};
 
 use crate::settings::Side;
+use crate::shake::{Sensitivity, ShakeDetector};
 
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -33,6 +35,8 @@ const SHELL_CLASSES: &[&str] = &["CabinetWClass", "WorkerW", "Progman", "SHELLDL
 enum Ev {
     DragStart,
     DragEnd,
+    /// The cursor was shaken mid-drag at this screen position.
+    Shake(i32, i32),
 }
 
 static TX: OnceLock<Mutex<Sender<Ev>>> = OnceLock::new();
@@ -42,6 +46,26 @@ static START_IN_SHELL: AtomicBool = AtomicBool::new(false);
 static START_X: AtomicI32 = AtomicI32::new(0);
 static START_Y: AtomicI32 = AtomicI32::new(0);
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// 0 = shake disabled, else 1 + Sensitivity as u8. Read on every mouse move,
+/// so it's an atomic rather than the settings lock.
+static SHAKE_MODE: AtomicU8 = AtomicU8::new(2);
+/// At most one shake-to-shelf per drag.
+static SHOOK: AtomicBool = AtomicBool::new(false);
+static SHAKE: Mutex<Option<ShakeDetector>> = Mutex::new(None);
+
+pub fn configure_shake(enabled: bool, sensitivity: Sensitivity) {
+    SHAKE_MODE.store(if enabled { 1 + sensitivity as u8 } else { 0 }, Ordering::Relaxed);
+}
+
+fn shake_sensitivity() -> Option<Sensitivity> {
+    match SHAKE_MODE.load(Ordering::Relaxed) {
+        1 => Some(Sensitivity::Gentle),
+        2 => Some(Sensitivity::Normal),
+        3 => Some(Sensitivity::Firm),
+        _ => None,
+    }
+}
 
 /// By default the drawer never takes activation, so dragging from Explorer
 /// isn't disturbed. It becomes focusable only while the user types in it.
@@ -75,6 +99,7 @@ pub fn start(app: AppHandle) {
             match ev {
                 Ev::DragStart => drag_started(&app),
                 Ev::DragEnd => schedule_hide(&app),
+                Ev::Shake(x, y) => shaken(&app, x, y),
             }
         }
     });
@@ -120,14 +145,19 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
                 START_IN_SHELL.store(foreground_in_shell(), Ordering::Relaxed);
             }
             WM_MOUSEMOVE => {
-                if DOWN.load(Ordering::Relaxed)
-                    && START_IN_SHELL.load(Ordering::Relaxed)
-                    && !DRAGGING.load(Ordering::Relaxed)
-                {
+                if DRAGGING.load(Ordering::Relaxed) {
+                    track_shake(x, y, info.time);
+                } else if DOWN.load(Ordering::Relaxed) && START_IN_SHELL.load(Ordering::Relaxed) {
                     let dx = x - START_X.load(Ordering::Relaxed);
                     let dy = y - START_Y.load(Ordering::Relaxed);
                     if dx.abs() >= DRAG_THRESHOLD_PX || dy.abs() >= DRAG_THRESHOLD_PX {
                         DRAGGING.store(true, Ordering::Relaxed);
+                        SHOOK.store(false, Ordering::Relaxed);
+                        if let (Some(sens), Ok(mut d)) = (shake_sensitivity(), SHAKE.lock()) {
+                            let mut detector = ShakeDetector::new(sens);
+                            detector.reset(x);
+                            *d = Some(detector);
+                        }
                         send(Ev::DragStart);
                     }
                 }
@@ -142,6 +172,19 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
         }
     }
     CallNextHookEx(None, code, wparam, lparam)
+}
+
+/// Feeds the shake detector during a drag (hook thread: keep it cheap).
+fn track_shake(x: i32, y: i32, t_ms: u32) {
+    if SHOOK.load(Ordering::Relaxed) || shake_sensitivity().is_none() {
+        return;
+    }
+    if let Ok(mut d) = SHAKE.try_lock() {
+        if d.as_mut().is_some_and(|d| d.feed(x, t_ms)) {
+            SHOOK.store(true, Ordering::Relaxed);
+            send(Ev::Shake(x, y));
+        }
+    }
 }
 
 fn show_drawer(app: &AppHandle) {
@@ -174,16 +217,27 @@ fn show_drawer(app: &AppHandle) {
     let _ = w.emit("ferryfile-drag-start", side);
 }
 
-/// Shows the drawer after the configured delay, unless the drag ended first.
+/// Shows the drawer after the configured delay, unless the drag ended first,
+/// a shake opened a shelf instead, or a shelf is already open (then the shelf
+/// is the drop target and the drawer would just get in the way).
 fn drag_started(app: &AppHandle) {
+    if crate::shelf::any_visible(app) {
+        return;
+    }
     let delay = crate::settings::current().open_delay_ms;
     if delay > 0 {
         std::thread::sleep(Duration::from_millis(delay.into()));
-        if !DRAGGING.load(Ordering::Relaxed) {
+        if !DRAGGING.load(Ordering::Relaxed) || SHOOK.load(Ordering::Relaxed) {
             return;
         }
     }
     show_drawer(app);
+}
+
+/// A shake opens a shelf at the cursor and puts the drawer away.
+fn shaken(app: &AppHandle, x: i32, y: i32) {
+    hide_now(app);
+    crate::shelf::spawn_at_cursor(app, x, y);
 }
 
 pub fn pin() {

@@ -18,13 +18,22 @@ function render() {
   radio("delay", String(state.openDelayMs >= 1 ? 400 : 0));
   radio("output", state.outputDir ? "folder" : "next");
   folderPath.textContent = state.outputDir ?? "";
+  $("shake").checked = state.shakeToShelf;
+  $("sensitivity").value = state.shakeSensitivity;
+  $("sensitivity").disabled = !state.shakeToShelf;
   $("about").textContent = `Ferryfile ${state.version} · settings in ${state.configDir}`;
 }
 
 async function save() {
   try {
     await invoke("set_settings", {
-      settings: { drawerSide: state.drawerSide, openDelayMs: state.openDelayMs, outputDir: state.outputDir },
+      settings: {
+        drawerSide: state.drawerSide,
+        openDelayMs: state.openDelayMs,
+        outputDir: state.outputDir,
+        shakeToShelf: state.shakeToShelf,
+        shakeSensitivity: state.shakeSensitivity,
+      },
       autostart: state.autostart,
     });
     statusEl.textContent = "Saved";
@@ -44,6 +53,15 @@ async function chooseFolder() {
   return Boolean(dir);
 }
 
+$("shake").addEventListener("change", (e) => {
+  state.shakeToShelf = e.target.checked;
+  render();
+  save();
+});
+$("sensitivity").addEventListener("change", (e) => {
+  state.shakeSensitivity = e.target.value;
+  save();
+});
 $("autostart").addEventListener("change", (e) => {
   state.autostart = e.target.checked;
   save();
