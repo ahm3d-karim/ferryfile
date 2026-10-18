@@ -1,26 +1,45 @@
-:root { --teal: #2dd4bf; --bg: #12181e; --panel: #1a2229; --fg: #e6edf3; --muted: #9aa7b3; --line: rgba(255,255,255,.12); color-scheme: dark; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: "Segoe UI Variable", "Segoe UI", sans-serif; font-size: 14px; }
-main { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; height: 100%; box-sizing: border-box; }
-h1 { font-size: 17px; margin: 0 0 4px; }
-small { color: var(--muted); font-size: 12px; }
-.row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
-.row span { display: flex; flex-direction: column; gap: 2px; }
-fieldset { margin: 0; padding: 10px 14px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; gap: 8px; }
-legend { padding: 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-fieldset label { display: flex; align-items: center; gap: 8px; }
-input[type="radio"], input[type="checkbox"] { accent-color: var(--teal); }
-input[role="switch"] { width: 18px; height: 18px; }
-.folder button { margin-left: auto; }
-.path { margin: 0 0 0 24px; font-size: 12px; color: var(--muted); word-break: break-all; }
-.path:empty { display: none; }
-button { font: inherit; font-size: 13px; color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 8px; padding: 5px 14px; cursor: pointer; }
-button:hover { border-color: var(--teal); }
-button.primary { background: var(--teal); border-color: var(--teal); color: #062925; font-weight: 600; }
-#status { margin: 0; min-height: 18px; font-size: 12px; }
-#status.ok { color: #86efac; }
-#status.error { color: #fca5a5; }
-footer { margin-top: auto; display: flex; align-items: center; gap: 12px; }
-#about { flex: 1; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.indent { padding-left: 24px; }
-select { margin-left: 8px; font: inherit; font-size: 13px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
-select:disabled { opacity: .5; }
+body { background: var(--surface); overflow-y: auto; }
+main { padding: 24px 24px 20px; display: flex; flex-direction: column; gap: 4px; min-height: 100%; }
+
+h1 { margin: 0 0 8px; font-family: var(--font-display); font-size: 28px; line-height: 36px; font-weight: 600; }
+h2 { margin: 16px 0 6px; font-size: 14px; line-height: 20px; font-weight: 600; }
+
+.card {
+  display: flex; align-items: center; gap: 14px;
+  min-height: 64px; padding: 10px 16px;
+  background: var(--layer); border: 1px solid var(--stroke); border-radius: 6px;
+}
+.card.sub { min-height: 48px; margin-top: -2px; padding-left: 50px; border-top-left-radius: 0; border-top-right-radius: 0; }
+.card-icon { color: var(--text); }
+.card-icon .icon { width: 20px; height: 20px; }
+.card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.card-title { font-size: 14px; line-height: 20px; }
+.card-desc { font-size: 12px; line-height: 16px; color: var(--text-2); overflow-wrap: anywhere; }
+
+.combo {
+  min-width: 170px; height: 32px; padding: 0 10px;
+  background: var(--control); border: 1px solid var(--stroke); border-radius: var(--r-control);
+  font-size: 14px;
+}
+.combo:hover { background: var(--control-hover); }
+.combo option { background: var(--surface); }
+.combo:disabled { opacity: 0.4; }
+
+/* Fluent toggle switch */
+.switch-wrap { display: flex; align-items: center; gap: 12px; }
+.switch-state { font-size: 14px; color: var(--text); min-width: 22px; text-align: right; }
+.switch {
+  appearance: none; margin: 0; width: 40px; height: 20px; flex: none;
+  border: 1px solid var(--text-2); border-radius: 10px; background: transparent; position: relative;
+}
+.switch::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--text-2); transition: transform 0.15s, background 0.15s;
+}
+.switch:checked { background: var(--accent); border-color: var(--accent); }
+.switch:checked::before { transform: translateX(20px); background: var(--on-accent); }
+
+#status { margin: 8px 0 0; min-height: 16px; font-size: 12px; color: var(--text-2); }
+#status.error { color: var(--critical); }
+footer { margin-top: auto; padding-top: 12px; display: flex; align-items: center; gap: 12px; }
+#about { flex: 1; font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

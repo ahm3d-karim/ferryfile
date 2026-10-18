@@ -4,30 +4,40 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ferryfile Shelf</title>
+    <link rel="stylesheet" href="/src/fluent.css" />
     <link rel="stylesheet" href="/src/shelf.css" />
   </head>
   <body>
     <main id="shelf">
       <header data-tauri-drag-region>
         <span class="title" data-tauri-drag-region>Shelf</span>
-        <span id="count" data-tauri-drag-region></span>
-        <button id="pin" class="icon" title="Keep this shelf (pinned shelves stay open when emptied)">📌</button>
-        <button id="close" class="icon" title="Close shelf (files stay where they are)">×</button>
+        <span id="count" class="count" data-tauri-drag-region></span>
+        <button id="pin" class="icon-btn" data-icon="pin" title="Pin shelf" aria-label="Pin shelf"></button>
+        <button id="close" class="icon-btn" data-icon="close" title="Close shelf (files stay where they are)" aria-label="Close shelf"></button>
       </header>
 
-      <p id="empty">Drop files here.<br />Drag them out when you need them.</p>
+      <div id="empty" class="empty">
+        <span data-icon="drop" data-icon-class="icon drop"></span>
+        <p>Drop files here</p>
+        <span class="sub">Drag them out again whenever you need them.</span>
+      </div>
       <ul id="items"></ul>
 
       <section id="panel" hidden>
         <div id="groups"></div>
       </section>
 
-      <progress id="progress" max="1" value="0" hidden></progress>
-      <p id="status"></p>
+      <div id="infobar" class="infobar" hidden>
+        <span id="info-state" class="state"></span>
+        <div class="msg">
+          <span id="status"></span>
+          <progress id="progress" max="1" value="0" hidden></progress>
+        </div>
+      </div>
 
       <footer>
-        <button id="drag-all" title="Drag everything out at once" hidden>⇲ Drag all</button>
-        <button id="actions" title="Convert, zip, move or copy everything on this shelf" hidden>Actions ▾</button>
+        <button id="drag-all" class="btn accent" data-icon="dragOut" title="Drag everything out at once" hidden>Drag all</button>
+        <button id="actions" class="btn" title="Convert, zip, move or copy everything on this shelf" hidden>Actions</button>
       </footer>
     </main>
     <script type="module" src="/src/shelf.js"></script>

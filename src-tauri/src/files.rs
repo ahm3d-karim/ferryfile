@@ -128,6 +128,50 @@ pub async fn send_to_folder(
         .collect()
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileInfo {
+    /// Human kind, e.g. "PNG image", "Folder".
+    kind: String,
+    size: u64,
+    is_dir: bool,
+    width: Option<u32>,
+    height: Option<u32>,
+    /// Number of entries, for folders.
+    items: Option<usize>,
+}
+
+fn kind_of(ext: &str) -> &'static str {
+    match ext {
+        "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "tif" | "tiff" | "heic" | "avif" | "svg" => "image",
+        "mp3" | "m4a" | "aac" | "wav" | "flac" | "ogg" | "opus" | "aiff" | "aif" | "wma" => "audio",
+        "mp4" | "m4v" | "mov" | "mkv" | "webm" | "avi" | "wmv" => "video",
+        "xlsx" | "xlsm" | "xlsb" | "xls" | "ods" | "csv" | "tsv" => "spreadsheet",
+        "pptx" | "ppt" | "odp" => "presentation",
+        "zip" | "7z" | "rar" | "tar" | "gz" => "archive",
+        _ => "document",
+    }
+}
+
+/// What the drawer's file card shows: kind, size, and image dimensions
+/// (read from the header only, so it's fast even for large files).
+#[tauri::command]
+pub fn file_info(path: String) -> Result<FileInfo, String> {
+    let p = Path::new(&path);
+    let meta = std::fs::metadata(p).map_err(|e| e.to_string())?;
+    if meta.is_dir() {
+        let items = std::fs::read_dir(p).map(|d| d.count()).ok();
+        return Ok(FileInfo { kind: "Folder".into(), size: 0, is_dir: true, width: None, height: None, items });
+    }
+    let ext = crate::engine::ext_of(p);
+    let kind = if ext.is_empty() { "File".to_string() } else { format!("{} {}", ext.to_uppercase(), kind_of(&ext)) };
+    let (width, height) = match image::image_dimensions(p) {
+        Ok((w, h)) => (Some(w), Some(h)),
+        Err(_) => (None, None),
+    };
+    Ok(FileInfo { kind, size: meta.len(), is_dir: false, width, height, items: None })
+}
+
 /// Adds `path` to the archive under `name`, recursing into folders.
 fn zip_add<W: std::io::Write + std::io::Seek>(
     zip: &mut zip::ZipWriter<W>,

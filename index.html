@@ -4,44 +4,87 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ferryfile</title>
+    <link rel="stylesheet" href="/src/fluent.css" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <main id="drawer" class="drawer">
-      <header>
-        <span class="boat">⛵</span>
-        <h1>Ferryfile</h1>
-        <button id="shelf-btn" class="shelf-btn" title="Show or hide your shelves">Shelves <span id="shelf-count"></span></button>
-        <button id="settings-btn" class="close" title="Settings" aria-label="Settings">⚙</button>
-        <button id="close" class="close" aria-label="Close">×</button>
+      <header class="titlebar">
+        <span class="app" data-icon="app"></span>
+        <span class="app-name">Ferryfile</span>
+        <button id="shelf-btn" class="icon-btn" data-icon="shelves" title="Show or hide shelves" aria-label="Shelves"><span id="shelf-count"></span></button>
+        <button id="settings-btn" class="icon-btn" data-icon="settings" title="Settings" aria-label="Settings"></button>
+        <button id="close" class="icon-btn" data-icon="close" title="Close (Esc)" aria-label="Close"></button>
       </header>
-      <section id="idle" class="hint">Drop a file here</section>
-      <ul id="files"></ul>
 
-      <div id="tools" hidden>
-        <input id="search" type="search" placeholder="Search recipes and actions" autocomplete="off" />
-        <section id="recipes">
-          <h2>Recipes</h2>
-          <div class="chips" id="recipe-chips"></div>
+      <section id="idle" class="dropzone">
+        <span class="dropzone-icon" data-icon="drop" data-icon-class="icon drop"></span>
+        <p class="dropzone-title">Drop files here</p>
+        <p class="dropzone-sub">Images, audio, video, PDFs, documents and spreadsheets. Shake while dragging to open a shelf instead.</p>
+      </section>
+
+      <div id="content" hidden>
+        <section class="file-card">
+          <span id="file-thumb" class="thumb"></span>
+          <div class="file-text">
+            <span id="file-name" class="file-name"></span>
+            <span id="file-meta" class="file-meta"></span>
+          </div>
         </section>
-        <div id="actions"></div>
+
+        <div id="tools">
+          <label class="search">
+            <span class="visually-hidden">Search actions</span>
+            <input id="search" class="textbox" type="search" placeholder="Search actions" autocomplete="off" />
+          </label>
+
+          <button id="suggested" class="suggested" type="button" hidden>
+            <span class="label" id="suggested-label"></span>
+            <span class="hint" id="suggested-hint"></span>
+            <span class="kbd-on-accent">Enter</span>
+          </button>
+
+          <div id="groups"></div>
+
+          <section class="group" id="recipes-group">
+            <div class="heading">Recipes<span class="spacer"></span><button id="new-recipe" type="button" class="icon-btn small" data-icon="add">New</button></div>
+            <div id="recipe-rows"></div>
+          </section>
+
+          <section class="group">
+            <div class="heading">File</div>
+            <div id="file-grid" class="file-grid"></div>
+          </section>
+        </div>
+
+        <form id="editor" class="editor" hidden>
+          <div class="editor-title" id="editor-title">New recipe</div>
+          <label class="field">
+            <span>Name</span>
+            <input id="recipe-name" class="textbox" type="text" placeholder="e.g. Web-ready image" maxlength="60" autocomplete="off" />
+          </label>
+          <div class="field">
+            <span>Steps</span>
+            <ol id="steps"></ol>
+            <select id="add-step" class="textbox"></select>
+          </div>
+          <p id="editor-error" class="error"></p>
+          <div class="editor-buttons">
+            <button type="submit" id="save-recipe" class="btn accent">Save</button>
+            <button type="button" id="cancel-recipe" class="btn">Cancel</button>
+            <button type="button" id="delete-recipe" class="btn danger" hidden>Delete</button>
+          </div>
+        </form>
       </div>
 
-      <form id="editor" hidden>
-        <h2 id="editor-title">New recipe</h2>
-        <input id="recipe-name" type="text" placeholder="Recipe name" maxlength="60" autocomplete="off" />
-        <ol id="steps"></ol>
-        <select id="add-step"></select>
-        <p id="editor-error" class="error"></p>
-        <div class="editor-buttons">
-          <button type="submit" id="save-recipe" class="primary">Save</button>
-          <button type="button" id="cancel-recipe">Cancel</button>
-          <button type="button" id="delete-recipe" class="danger" hidden>Delete</button>
+      <footer id="infobar" class="infobar" hidden>
+        <span id="info-state" class="state"></span>
+        <div class="msg">
+          <span id="info-text"></span>
+          <progress id="progress" max="1" value="0" hidden></progress>
         </div>
-      </form>
-
-      <progress id="progress" max="1" value="0" hidden></progress>
-      <p id="status"></p>
+        <button id="info-show" type="button" class="btn small" hidden>Show</button>
+      </footer>
     </main>
     <script type="module" src="/src/main.js"></script>
   </body>

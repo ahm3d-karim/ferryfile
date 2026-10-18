@@ -4,58 +4,88 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ferryfile Settings</title>
+    <link rel="stylesheet" href="/src/fluent.css" />
     <link rel="stylesheet" href="/src/settings.css" />
   </head>
   <body>
     <main>
-      <h1><span class="boat">⛵</span> Ferryfile settings</h1>
+      <h1>Settings</h1>
 
-      <label class="row">
-        <span>
-          <strong>Start with Windows</strong>
-          <small>Keep Ferryfile ready in the tray after you sign in.</small>
-        </span>
-        <input id="autostart" type="checkbox" role="switch" />
-      </label>
-
-      <fieldset>
-        <legend>Drawer edge</legend>
-        <label><input type="radio" name="side" value="right" /> Right</label>
-        <label><input type="radio" name="side" value="left" /> Left</label>
-      </fieldset>
-
-      <fieldset>
-        <legend>Open the drawer</legend>
-        <label><input type="radio" name="delay" value="0" /> As soon as I drag a file</label>
-        <label><input type="radio" name="delay" value="400" /> After a short pause <small>(fewer accidental opens)</small></label>
-      </fieldset>
-
-      <fieldset>
-        <legend>Shelves</legend>
-        <label><input id="shake" type="checkbox" /> Shake the cursor while dragging to open a shelf</label>
-        <label class="indent">Sensitivity
-          <select id="sensitivity">
-            <option value="gentle">Gentle: small wiggles count</option>
-            <option value="normal">Normal</option>
-            <option value="firm">Firm: fewer accidental shelves</option>
-          </select>
+      <h2>General</h2>
+      <div class="card">
+        <span class="card-icon" data-icon="app"></span>
+        <label class="card-text" for="autostart">
+          <span class="card-title">Start with Windows</span>
+          <span class="card-desc">Keep Ferryfile ready in the tray after you sign in</span>
         </label>
-      </fieldset>
+        <span class="switch-wrap"><span id="autostart-state" class="switch-state"></span><input id="autostart" class="switch" type="checkbox" role="switch" /></span>
+      </div>
 
-      <fieldset>
-        <legend>Save converted files</legend>
-        <label><input type="radio" name="output" value="next" /> Next to the original</label>
-        <label class="folder">
-          <input type="radio" name="output" value="folder" /> In a folder:
-          <button type="button" id="pick">Choose…</button>
+      <h2>Drawer</h2>
+      <div class="card">
+        <span class="card-icon" data-icon="shelves"></span>
+        <label class="card-text" for="side">
+          <span class="card-title">Screen edge</span>
+          <span class="card-desc">Where the drawer slides in from</span>
         </label>
-        <p id="folder-path" class="path"></p>
-      </fieldset>
+        <select id="side" class="combo">
+          <option value="right">Right</option>
+          <option value="left">Left</option>
+        </select>
+      </div>
+      <div class="card">
+        <span class="card-icon" data-icon="drop"></span>
+        <label class="card-text" for="delay">
+          <span class="card-title">Open the drawer</span>
+          <span class="card-desc">A short pause means fewer accidental opens</span>
+        </label>
+        <select id="delay" class="combo">
+          <option value="0">Right away</option>
+          <option value="400">After a short pause</option>
+        </select>
+      </div>
+
+      <h2>Shelves</h2>
+      <div class="card">
+        <span class="card-icon" data-icon="pin"></span>
+        <label class="card-text" for="shake">
+          <span class="card-title">Shake to open a shelf</span>
+          <span class="card-desc">Shake the cursor side to side while dragging a file</span>
+        </label>
+        <span class="switch-wrap"><span id="shake-state" class="switch-state"></span><input id="shake" class="switch" type="checkbox" role="switch" /></span>
+      </div>
+      <div class="card sub" id="sensitivity-card">
+        <label class="card-text" for="sensitivity">
+          <span class="card-title">Shake sensitivity</span>
+        </label>
+        <select id="sensitivity" class="combo">
+          <option value="gentle">Gentle</option>
+          <option value="normal">Normal</option>
+          <option value="firm">Firm</option>
+        </select>
+      </div>
+
+      <h2>Converted files</h2>
+      <div class="card">
+        <span class="card-icon" data-icon="folder"></span>
+        <label class="card-text" for="output">
+          <span class="card-title">Save to</span>
+          <span class="card-desc" id="folder-path">Next to the original file</span>
+        </label>
+        <select id="output" class="combo">
+          <option value="next">Next to the original</option>
+          <option value="folder">A folder I choose</option>
+        </select>
+      </div>
+      <div class="card sub" id="folder-card" hidden>
+        <span class="card-text"><span class="card-title">Folder</span></span>
+        <button type="button" id="pick" class="btn">Choose folder…</button>
+      </div>
 
       <p id="status" role="status"></p>
       <footer>
         <span id="about"></span>
-        <button type="button" id="close" class="primary">Done</button>
+        <button type="button" id="close" class="btn accent">Done</button>
       </footer>
     </main>
     <script type="module" src="/src/settings.js"></script>

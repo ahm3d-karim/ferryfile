@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
+import { icon, hydrateIcons, iconForPath } from "./icons.js";
 
 const $ = (id) => document.getElementById(id);
 const shelf = $("shelf");
@@ -10,6 +11,8 @@ const panel = $("panel");
 const groupsEl = $("groups");
 const statusEl = $("status");
 const progressEl = $("progress");
+
+hydrateIcons();
 
 // Window label is "shelf-<id>".
 const id = getCurrentWindow().label.replace(/^shelf-/, "");
@@ -27,8 +30,36 @@ function el(tag, props = {}, children = []) {
 }
 
 function setStatus(text, kind = "") {
+  const bar = $("infobar");
+  bar.hidden = !text;
+  bar.className = `infobar ${kind}`;
   statusEl.textContent = text;
-  statusEl.className = kind;
+  $("info-state").replaceChildren(icon(kind === "ok" ? "check" : kind === "error" ? "error" : "info"));
+}
+
+// Size per path, for the "folder · size" line (looked up once).
+const sizes = new Map();
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 10 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`;
+}
+async function sizeOf(p) {
+  if (!sizes.has(p)) {
+    try {
+      const info = await invoke("file_info", { path: p });
+      sizes.set(p, info.isDir ? `${info.items ?? 0} items` : formatBytes(info.size));
+    } catch {
+      sizes.set(p, "");
+    }
+  }
+  return sizes.get(p);
 }
 
 // ---------------------------------------------------------------- drag out
@@ -68,24 +99,29 @@ function render() {
   $("empty").hidden = n > 0;
   $("drag-all").hidden = $("actions").hidden = n === 0;
   if (n === 0) panel.hidden = true;
-  $("count").textContent = n ? String(n) : "";
+  $("count").textContent = n ? `${n} item${n > 1 ? "s" : ""}` : "";
   $("pin").classList.toggle("on", pinned);
   $("pin").title = pinned
     ? "Pinned: stays open when emptied. Click to unpin."
     : "Pin this shelf so it stays open when emptied";
+  $("pin").ariaLabel = pinned ? "Unpin shelf" : "Pin shelf";
   list.replaceChildren(
     ...items.map((p) => {
+      const where = el("span", { className: "where", textContent: folder(p) });
+      sizeOf(p).then((size) => size && (where.textContent = `${folder(p)} · ${size}`));
       const li = el("li", { title: `${p}\nDrag out to use · double-click to show in Explorer` }, [
-        el("div", { className: "text" }, [
-          el("span", { className: "name", textContent: basename(p) }),
-          el("span", { className: "where", textContent: folder(p) }),
-        ]),
-        el("button", {
-          className: "icon",
-          textContent: "×",
-          title: "Remove from shelf",
-          onclick: () => invoke("shelf_remove", { id, paths: [p], draggedOut: false }),
-        }),
+        icon(iconForPath(p)),
+        el("div", { className: "text" }, [el("span", { className: "name", textContent: basename(p) }), where]),
+        el(
+          "button",
+          {
+            className: "icon-btn",
+            title: "Remove from shelf",
+            ariaLabel: `Remove ${basename(p)} from shelf`,
+            onclick: () => invoke("shelf_remove", { id, paths: [p], draggedOut: false }),
+          },
+          [icon("close")],
+        ),
       ]);
       li.addEventListener("dblclick", () => invoke("reveal", { path: p }));
       draggable(li, () => [p]);
@@ -150,8 +186,12 @@ async function quick(done, task) {
   }
 }
 
-const chip = (label, onClick, title = "") => el("button", { type: "button", textContent: label, title, onclick: onClick });
-const section = (name, chips) => (chips.length ? el("section", {}, [el("h2", { textContent: name }), el("div", { className: "chips" }, chips)]) : "");
+const chip = (label, onClick, title = "", iconName = null) =>
+  el("button", { type: "button", className: "row", title, onclick: onClick }, [
+    ...(iconName ? [icon(iconName)] : []),
+    el("span", { className: "label", textContent: label }),
+  ]);
+const section = (name, rows) => (rows.length ? el("section", {}, [el("div", { className: "heading", textContent: name }), ...rows]) : "");
 
 async function renderActions() {
   const snapshot = [...items];
@@ -186,31 +226,39 @@ async function renderActions() {
       ),
     ),
     section("Files", [
-      chip("Zip", () => runOnShelf("Zipping", () => invoke("zip_items", { paths: snapshot }), [first]), `One .zip of ${all}`),
-      chip("Copy", () => quick(`Copied ${all}: paste in Explorer`, () => invoke("copy_files", { paths: snapshot }))),
-      chip("Copy path", () => quick("Path copied", () => invoke("copy_paths", { paths: snapshot }))),
+      chip("Zip", () => runOnShelf("Zipping", () => invoke("zip_items", { paths: snapshot }), [first]), `One .zip of ${all}`, "zip"),
+      chip("Copy", () => quick(`Copied ${all}. Paste in Explorer.`, () => invoke("copy_files", { paths: snapshot })), "", "copy"),
+      chip("Copy path", () => quick("Path copied", () => invoke("copy_paths", { paths: snapshot })), "", "link"),
       chip("Move to…", () =>
         quick(`Moved ${all}`, async () => {
           const moved = await invoke("send_to_folder", { paths: snapshot, copy: false });
           if (!moved.length) return false;
           await invoke("shelf_replace", { id, old: snapshot, new: moved });
         }),
+        "",
+        "move",
       ),
       chip("Copy to…", () =>
         quick(`Copied ${all}`, async () => {
           const copied = await invoke("send_to_folder", { paths: snapshot, copy: true });
           if (!copied.length) return false;
         }),
+        "",
+        "copyTo",
       ),
-      chip("Show in Explorer", () => quick("", () => invoke("reveal", { path: first }))),
-      chip("Clear shelf", () => invoke("shelf_remove", { id, paths: snapshot, draggedOut: false }), "Remove everything (files stay where they are)"),
+      chip("Show in Explorer", () => quick("", () => invoke("reveal", { path: first })), "", "explorer"),
+      chip("Clear shelf", () => invoke("shelf_remove", { id, paths: snapshot, draggedOut: false }), "Remove everything (files stay where they are)", "close"),
     ]),
   );
 }
 
+function setActionsLabel() {
+  $("actions").replaceChildren("Actions", icon(panel.hidden ? "chevronDown" : "chevronRight"));
+}
+setActionsLabel();
 $("actions").addEventListener("click", () => {
   panel.hidden = !panel.hidden;
-  $("actions").textContent = panel.hidden ? "Actions ▾" : "Actions ▴";
+  setActionsLabel();
   if (!panel.hidden) renderActions();
 });
 

@@ -1,19 +1,18 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { icon, hydrateIcons, iconForPath } from "./icons.js";
 
 const $ = (id) => document.getElementById(id);
 const drawer = $("drawer");
 const idle = $("idle");
-const filesEl = $("files");
+const content = $("content");
 const toolsEl = $("tools");
 const searchEl = $("search");
-const recipeChips = $("recipe-chips");
-const actionsEl = $("actions");
-const statusEl = $("status");
-const progressEl = $("progress");
+const groupsEl = $("groups");
+const recipeRows = $("recipe-rows");
+const suggestedBtn = $("suggested");
 
 const editor = $("editor");
-const editorTitle = $("editor-title");
 const nameEl = $("recipe-name");
 const stepsEl = $("steps");
 const addStepEl = $("add-step");
@@ -21,9 +20,13 @@ const editorError = $("editor-error");
 const saveBtn = $("save-recipe");
 const deleteBtn = $("delete-recipe");
 
+hydrateIcons();
+
 let paths = [];
+let suggestedRun = null;
 
 const basename = (p) => p.split(/[\\/]/).pop();
+const ext = (p) => (p.includes(".") ? p.split(".").pop().toLowerCase() : "");
 
 function el(tag, props = {}, children = []) {
   const node = Object.assign(document.createElement(tag), props);
@@ -31,195 +34,378 @@ function el(tag, props = {}, children = []) {
   return node;
 }
 
-function setStatus(text, kind = "") {
-  statusEl.textContent = text;
-  statusEl.className = kind;
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 10 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`;
 }
 
-function reset() {
-  paths = [];
-  idle.hidden = false;
-  filesEl.replaceChildren();
-  toolsEl.hidden = true;
-  closeEditor();
-  setStatus("");
+// ---------------------------------------------------------------- copy
+
+/** One-line reasons to pick a target, shown next to it. */
+const HINTS = {
+  "convert:webp": "Smaller, keeps transparency",
+  "convert:jpg": "Photos, no transparency",
+  "convert:png": "Lossless, keeps transparency",
+  "convert:gif": "256 colors, can loop",
+  "convert:bmp": "Uncompressed",
+  "convert:tiff": "For print and archiving",
+  "convert:pdf": "Easy to share and print",
+  "convert:mp3": "Plays everywhere",
+  "convert:m4a": "Small, good quality",
+  "convert:wav": "Uncompressed",
+  "convert:flac": "Lossless",
+  "convert:ogg": "Open format",
+  "convert:opus": "Smallest for speech",
+  "convert:mp4": "Plays everywhere",
+  "convert:mov": "For Apple and editing apps",
+  "convert:mkv": "Keeps every track",
+  "convert:webm": "For the web",
+  "convert:md": "Plain text with structure",
+  "text:md": "Plain text with structure",
+  "convert:docx": "Opens in Word",
+  "convert:odt": "Opens in LibreOffice",
+  "convert:html": "Opens in any browser",
+  "convert:epub": "For e-readers",
+  "convert:txt": "Just the words",
+  "text:txt": "Just the words",
+  "convert:csv": "First sheet, plain text",
+  "audio:mp3": "Just the sound",
+  "audio:m4a": "Just the sound, smaller",
+  "pages:png": "One image per page",
+  "pages:jpg": "One image per page",
+  "combine:pdf": "In drop order",
+  "compress:28": "Same video, smaller file",
+  "docling:md": "Keeps tables and layout",
+};
+
+/** Shorter labels where the engine's would crowd a segmented control. */
+const SHORT = { "compress:75": "Balanced", "compress:50": "Smallest" };
+
+const IMAGES = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff"];
+const AUDIO = ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff", "aif", "wma"];
+
+/** The action most people want for this file, if the engines offer it. */
+function preferredIds(path, multiple) {
+  if (multiple) return ["combine:pdf"];
+  const e = ext(path);
+  if (IMAGES.includes(e)) return e === "webp" ? ["convert:png"] : ["convert:webp", "convert:png"];
+  if (AUDIO.includes(e)) return e === "mp3" ? ["convert:m4a"] : ["convert:mp3"];
+  if (["mp4", "m4v"].includes(e)) return ["compress:28", "convert:webm"];
+  if (["mov", "mkv", "webm", "avi", "wmv"].includes(e)) return ["convert:mp4"];
+  if (e === "pdf") return ["text:md", "pages:png"];
+  if (["csv", "tsv"].includes(e)) return ["convert:md", "convert:pdf"];
+  if (["xlsx", "xlsm", "xlsb", "xls", "ods"].includes(e)) return ["convert:pdf", "convert:csv"];
+  return ["convert:pdf", "convert:docx", "convert:md"];
 }
+
+// ---------------------------------------------------------------- info bar
+
+let lastOutput = null;
+
+function setInfo(kind, text = "") {
+  const bar = $("infobar");
+  bar.hidden = !kind;
+  if (!kind) return;
+  bar.className = `infobar ${kind}`;
+  $("info-text").textContent = text;
+  const state = $("info-state");
+  state.replaceChildren(icon(kind === "ok" ? "check" : kind === "error" ? "error" : "info"));
+  $("progress").hidden = kind !== "busy";
+  $("info-show").hidden = !(kind === "ok" && lastOutput);
+}
+$("info-show").addEventListener("click", () => lastOutput && invoke("reveal", { path: lastOutput }));
 
 // ---------------------------------------------------------------- running
 
-// Overall progress across the files of the current run.
 let running = null; // { index, count }
 
-function setProgress(fraction) {
-  progressEl.hidden = fraction == null;
-  if (fraction != null) progressEl.value = fraction;
-}
-
 listen("ferryfile-progress", (e) => {
-  if (running) setProgress((running.index + e.payload.fraction) / running.count);
+  if (running) $("progress").value = (running.index + e.payload.fraction) / running.count;
 });
 
-/** Runs `job(path)` for every target (by default each dropped file), with progress and status. */
+/** Runs `job(path)` for every target (by default each dropped file). */
 async function runJob(label, job, targets = paths) {
   if (running) return;
-  setStatus(`${label}…`, "busy");
+  setInfo("busy", `${label}…`);
+  $("progress").value = 0;
   toolsEl.classList.add("disabled");
-  setProgress(0);
   const results = [];
   try {
     for (const [index, p] of targets.entries()) {
       running = { index, count: targets.length };
       try {
-        results.push(basename(await job(p)));
+        results.push(await job(p));
       } catch (err) {
-        setStatus(`${basename(p)}: ${err}`, "error");
+        setInfo("error", `${basename(p)}: ${err}`);
         return;
       }
     }
-    setStatus(`Saved ${results.join(", ")}`, "ok");
+    lastOutput = results.at(-1) ?? null;
+    setInfo("ok", `Saved ${results.map(basename).join(", ")}`);
   } finally {
     running = null;
-    setProgress(null);
     toolsEl.classList.remove("disabled");
   }
 }
 
-// ---------------------------------------------------------------- listing
-
-function chip(label, onClick, { title = "", search = label, extra } = {}) {
-  const b = el("button", { type: "button", textContent: label, title });
-  b.dataset.search = search.toLowerCase();
-  b.addEventListener("click", onClick);
-  if (!extra) return b;
-  const wrap = el("span", { className: "chip-wrap" }, [b, extra]);
-  wrap.dataset.search = b.dataset.search;
-  return wrap;
-}
-
-async function renderRecipes() {
-  const recipes = await invoke("recipes_for", { path: paths[0] });
-  recipeChips.replaceChildren(
-    ...recipes.map((r) => {
-      const steps = r.stepTitles.join(" → ");
-      const run = () => runJob(r.name, (p) => invoke("run_recipe", { id: r.id, path: p }));
-      const edit = r.builtin
-        ? null
-        : el("button", {
-            type: "button",
-            className: "edit",
-            textContent: "✎",
-            title: "Edit recipe",
-            onclick: () => openEditor(r),
-          });
-      return chip(r.name, run, { title: steps, search: `${r.name} ${steps}`, extra: edit });
-    }),
-    chip("+ New", () => openEditor(null), { title: "Chain actions into a recipe", search: "new recipe" }),
-  );
-}
-
-/** Runs a quick file action and reports the outcome in the status line. */
-async function fileAction(done, task) {
+/** Quick file actions: no progress, just a confirmation. */
+async function quick(done, task) {
   try {
-    const result = await task();
-    if (result !== false) setStatus(done, "ok");
+    const r = await task();
+    if (r === false) return;
+    lastOutput = null;
+    if (done) setInfo("ok", done);
   } catch (err) {
-    setStatus(String(err), "error");
+    setInfo("error", String(err));
   }
 }
 
-/** Actions for any dropped items, folders included; no conversion involved. */
-function fileChips() {
-  const n = paths.length === 1 ? basename(paths[0]) : `${paths.length} items`;
-  const sendTo = (copy) => async () => {
-    const moved = await invoke("send_to_folder", { paths, copy });
-    if (!moved.length) return false; // cancelled
-    if (!copy) await showFiles(moved); // keep acting on the files where they now are
-    return true;
-  };
-  return [
-    chip("Copy path", () => fileAction("Path copied", () => invoke("copy_paths", { paths })), {
-      title: "Copy the full path(s) as text",
-      search: "file copy path",
-    }),
-    chip("Copy", () => fileAction(`Copied ${n} — paste in Explorer`, () => invoke("copy_files", { paths })), {
-      title: "Put the files on the clipboard",
-      search: "file copy clipboard",
-    }),
-    chip("Show in Explorer", () => fileAction("", () => invoke("reveal", { path: paths[0] })), {
-      search: "file show explorer reveal folder",
-    }),
-    chip("Terminal here", () => fileAction("", () => invoke("open_terminal", { path: paths[0] })), {
-      search: "file terminal console powershell",
-    }),
-    chip("Move to…", () => fileAction(`Moved ${n}`, sendTo(false)), { search: "file move folder" }),
-    chip("Copy to…", () => fileAction(`Copied ${n}`, sendTo(true)), { search: "file copy to folder duplicate" }),
-    chip("Add to shelf", () => fileAction(`${n} added to the shelf`, () => invoke("shelf_add", { id: null, paths })), {
-      title: "Keep these handy on a floating shelf (tip: shake while dragging to open one)",
-      search: "file shelf float keep",
-    }),
-  ];
+// ---------------------------------------------------------------- building blocks
+
+function row(label, onClick, { hint = "", search = label, iconName = null, extra = null } = {}) {
+  const b = el("button", { type: "button", className: "row" }, [
+    ...(iconName ? [icon(iconName)] : []),
+    el("span", { className: "label", textContent: label }),
+    ...(hint ? [el("span", { className: "hint", textContent: hint })] : []),
+    ...(extra ? [extra] : []),
+    el("span", { className: "kbd", hidden: true }),
+  ]);
+  b.dataset.search = `${search} ${hint}`.toLowerCase();
+  b.dataset.numbered = "1";
+  b.addEventListener("click", (e) => {
+    if (!e.target.closest(".edit")) onClick();
+  });
+  return b;
 }
 
+function segmented(items) {
+  return el(
+    "div",
+    { className: "segmented" },
+    items.map(({ label, title, search, run }) => {
+      const b = el("button", { type: "button", textContent: label, title, onclick: run });
+      b.dataset.search = search.toLowerCase();
+      return b;
+    }),
+  );
+}
+
+function group(heading, body) {
+  return el("section", { className: "group" }, [el("div", { className: "heading", textContent: heading }), body]);
+}
+
+const runAction = (a) => () =>
+  runJob(`${a.group}: ${a.label}`, (p) => invoke("run_action", { actionId: a.id, path: p }));
+
+// ---------------------------------------------------------------- render
+
 async function renderActions() {
-  // Actions come from the first file; other files get them if they support the same id.
   const [actions, combined] = await Promise.all([
     invoke("list_actions", { path: paths[0] }),
     paths.length > 1 ? invoke("combine_actions", { paths }) : [],
   ]);
 
-  // Combine actions take all dropped files at once and produce one output.
-  const combineChip = (a) =>
-    chip(
-      a.label,
-      () => runJob(`${a.group}: ${a.label}`, () => invoke("run_combine", { actionId: a.id, paths }), [paths[0]]),
-      { title: `All ${paths.length} files, in drop order`, search: `${a.group} ${a.label}` },
-    );
-  const actionChip = (a) =>
-    chip(a.label, () => runJob(`${a.group}: ${a.label}`, (p) => invoke("run_action", { actionId: a.id, path: p })), {
-      search: `${a.group} ${a.label}`,
-    });
+  // Suggested: the most likely action, on Enter.
+  const all = [...combined, ...actions];
+  const pick = preferredIds(paths[0], paths.length > 1).map((id) => all.find((a) => a.id === id)).find(Boolean);
+  suggestedBtn.hidden = !pick;
+  suggestedRun = null;
+  if (pick) {
+    const isCombine = combined.includes(pick);
+    const verb = pick.group === "Convert" ? `Convert to ${pick.label}` : `${pick.group}: ${pick.label}`;
+    $("suggested-label").textContent = isCombine ? `Combine into ${pick.label.replace(/^One /, "one ")}` : verb;
+    $("suggested-hint").textContent = HINTS[pick.id] ?? "";
+    suggestedBtn.dataset.search = `${verb} ${pick.id}`.toLowerCase();
+    suggestedRun = isCombine
+      ? () => runJob(`Combining ${paths.length} files`, () => invoke("run_combine", { actionId: pick.id, paths }), [paths[0]])
+      : runAction(pick);
+  }
 
-  const groups = [
-    ...[...Map.groupBy(combined, (a) => a.group)].map(([name, items]) => [name, items.map(combineChip)]),
-    ...[...Map.groupBy(actions, (a) => a.group)].map(([name, items]) => [name, items.map(actionChip)]),
-    ["File", fileChips()],
-  ];
-  actionsEl.replaceChildren(
-    ...groups.map(([name, chips]) =>
-      el("section", {}, [el("h2", { textContent: name }), el("div", { className: "chips" }, chips)]),
-    ),
+  const sections = [];
+
+  if (combined.length) {
+    const rows = combined
+      .filter((a) => a !== pick)
+      .map((a) =>
+        row(a.label, () => runJob(`${a.group}: ${a.label}`, () => invoke("run_combine", { actionId: a.id, paths }), [paths[0]]), {
+          hint: `All ${paths.length} files`,
+          search: `${a.group} ${a.label}`,
+        }),
+      );
+    if (rows.length) sections.push(group("Combine", el("div", { className: "rows" }, rows)));
+  }
+
+  // Short-label groups (Resize, Compress) become segmented controls, paired side by side.
+  const pending = [];
+  const flushPair = () => {
+    if (!pending.length) return;
+    sections.push(pending.length === 2 ? el("div", { className: "pair" }, pending.splice(0)) : pending.pop());
+  };
+
+  for (const [name, items] of Map.groupBy(actions, (a) => a.group)) {
+    const shown = items.filter((a) => a !== pick);
+    if (!shown.length) continue;
+    const labels = shown.map((a) => SHORT[a.id] ?? a.label);
+    if (shown.length <= 4 && labels.every((l) => l.length <= 9) && name !== "Convert") {
+      pending.push(
+        group(
+          name,
+          segmented(
+            shown.map((a, i) => ({
+              label: labels[i],
+              title: `${a.group}: ${a.label}`,
+              search: `${a.group} ${a.label} ${labels[i]}`,
+              run: runAction(a),
+            })),
+          ),
+        ),
+      );
+      if (pending.length === 2) flushPair();
+      continue;
+    }
+    flushPair();
+    const heading = name === "Convert" ? "Convert to" : name;
+    const rows = shown.map((a) => row(a.label, runAction(a), { hint: HINTS[a.id] ?? "", search: `${a.group} ${a.label}` }));
+    const body = el("div", { className: "rows" }, rows.slice(0, 5));
+    if (rows.length > 5) {
+      const rest = rows.slice(5);
+      const more = row(`More: ${rest.map((r) => r.querySelector(".label").textContent).join(", ")}`, () => {
+        more.replaceWith(...rest);
+        renumber();
+      });
+      more.classList.add("more");
+      more.append(icon("chevronRight"));
+      more.dataset.search = rest.map((r) => r.dataset.search).join(" ");
+      body.append(more);
+    }
+    sections.push(group(heading, body));
+  }
+  flushPair();
+
+  groupsEl.replaceChildren(...sections);
+}
+
+async function renderRecipes() {
+  const recipes = await invoke("recipes_for", { path: paths[0] });
+  recipeRows.replaceChildren(
+    ...recipes.map((r) => {
+      const edit = r.builtin
+        ? null
+        : el("button", { type: "button", className: "icon-btn edit", title: "Edit recipe", ariaLabel: "Edit recipe", onclick: () => openEditor(r) }, [icon("edit")]);
+      return row(r.name, () => runJob(r.name, (p) => invoke("run_recipe", { id: r.id, path: p })), {
+        hint: r.stepTitles.join(" · "),
+        search: `recipe ${r.name}`,
+        extra: edit,
+      });
+    }),
   );
+  $("recipes-group").hidden = recipes.length === 0;
+}
 
+function renderFileGrid() {
+  const n = paths.length === 1 ? basename(paths[0]) : `${paths.length} items`;
+  const sendTo = (copy) => async () => {
+    const moved = await invoke("send_to_folder", { paths, copy });
+    if (!moved.length) return false; // cancelled
+    if (!copy) await showFiles(moved); // keep acting on the files where they now are
+  };
+  const tile = (label, iconName, title, onClick) => {
+    const b = el("button", { type: "button", className: "tile", title, onclick: onClick }, [icon(iconName), el("span", { textContent: label })]);
+    b.dataset.search = `file ${label} ${title}`.toLowerCase();
+    return b;
+  };
+  $("file-grid").replaceChildren(
+    tile("Copy", "copy", "Copy the files, then paste in Explorer", () => quick(`Copied ${n}. Paste in Explorer.`, () => invoke("copy_files", { paths }))),
+    tile("Copy path", "link", "Copy the full path as text", () => quick("Path copied", () => invoke("copy_paths", { paths }))),
+    tile("Explorer", "explorer", "Show in File Explorer", () => quick("", () => invoke("reveal", { path: paths[0] }))),
+    tile("Terminal", "terminal", "Open a terminal here", () => quick("", () => invoke("open_terminal", { path: paths[0] }))),
+    tile("Move to…", "move", "Move to another folder", () => quick(`Moved ${n}`, sendTo(false))),
+    tile("Copy to…", "copyTo", "Copy to another folder", () => quick(`Copied ${n}`, sendTo(true))),
+    tile("Zip", "zip", "Make one .zip", () => runJob("Zipping", () => invoke("zip_items", { paths }), [paths[0]])),
+    tile("To shelf", "shelfAdd", "Keep on a floating shelf (or shake while dragging)", () => quick(`${n} added to a shelf`, () => invoke("shelf_add", { id: null, paths }))),
+  );
+}
+
+async function renderFileCard() {
+  const thumb = $("file-thumb");
+  if (paths.length > 1) {
+    thumb.replaceChildren(icon("files"));
+    $("file-name").textContent = `${paths.length} files`;
+    $("file-meta").textContent = paths.map(basename).join(", ");
+    return;
+  }
+  const p = paths[0];
+  thumb.replaceChildren(icon(iconForPath(p)));
+  $("file-name").textContent = basename(p);
+  $("file-name").title = p;
+  $("file-meta").textContent = "";
+  try {
+    const info = await invoke("file_info", { path: p });
+    const parts = [info.kind];
+    if (info.isDir) parts.push(`${info.items ?? 0} items`);
+    else parts.push(formatBytes(info.size));
+    if (info.width && info.height) parts.push(`${info.width} × ${info.height}`);
+    $("file-meta").textContent = parts.join(" · ");
+  } catch {
+    $("file-meta").textContent = "";
+  }
+}
+
+/** Gives the first nine visible rows their number-key shortcut. */
+function renumber() {
+  let n = 0;
+  for (const r of toolsEl.querySelectorAll("[data-numbered]")) {
+    const kbd = r.querySelector(".kbd");
+    const visible = !r.hidden && !r.closest("[hidden]");
+    if (visible && n < 9) {
+      n++;
+      kbd.textContent = String(n);
+      kbd.hidden = false;
+      r.dataset.key = String(n);
+    } else {
+      kbd.hidden = true;
+      delete r.dataset.key;
+    }
+  }
 }
 
 function applySearch() {
   const q = searchEl.value.trim().toLowerCase();
-  for (const section of toolsEl.querySelectorAll("section")) {
-    let visible = 0;
-    for (const c of section.querySelectorAll(".chips > *")) {
-      const show = !q || c.dataset.search.includes(q);
-      c.hidden = !show;
-      if (show) visible++;
-    }
-    section.hidden = visible === 0;
+  const match = (node) => !q || node.dataset.search?.includes(q);
+  suggestedBtn.hidden = !suggestedRun || !match(suggestedBtn);
+  for (const node of toolsEl.querySelectorAll(".row, .segmented button, .tile")) {
+    node.hidden = !match(node);
   }
+  for (const section of toolsEl.querySelectorAll(".group")) {
+    const any = section.querySelector(".row:not([hidden]), .segmented button:not([hidden]), .tile:not([hidden])");
+    section.hidden = !any || (section.id === "recipes-group" && !recipeRows.children.length);
+  }
+  renumber();
 }
 
 async function showFiles(dropped) {
   paths = dropped;
   idle.hidden = paths.length > 0;
-  filesEl.replaceChildren(...paths.map((p) => el("li", { textContent: basename(p), title: p })));
+  content.hidden = paths.length === 0;
   closeEditor();
-  setStatus("");
+  setInfo(null);
   if (!paths.length) return;
 
   searchEl.value = "";
-  await Promise.all([renderRecipes(), renderActions()]);
-  toolsEl.hidden = false;
+  renderFileGrid();
+  await Promise.all([renderFileCard(), renderRecipes(), renderActions()]);
   applySearch();
 }
 
 searchEl.addEventListener("input", applySearch);
+suggestedBtn.addEventListener("click", () => suggestedRun?.());
 
 // ---------------------------------------------------------------- editor
 
@@ -230,12 +416,12 @@ function openEditor(recipe) {
     id: recipe?.id ?? null,
     steps: recipe ? recipe.steps.map((id, i) => ({ id, title: recipe.stepTitles[i] })) : [],
   };
-  editorTitle.textContent = recipe ? "Edit recipe" : "New recipe";
+  $("editor-title").textContent = recipe ? "Edit recipe" : "New recipe";
   nameEl.value = recipe?.name ?? "";
   deleteBtn.hidden = !recipe;
   toolsEl.hidden = true;
   editor.hidden = false;
-  setStatus("");
+  setInfo(null);
   refreshEditor();
   invoke("focus_drawer").then(() => nameEl.focus());
 }
@@ -243,7 +429,7 @@ function openEditor(recipe) {
 function closeEditor() {
   editing = null;
   editor.hidden = true;
-  if (paths.length) toolsEl.hidden = false;
+  toolsEl.hidden = false;
 }
 
 async function refreshEditor() {
@@ -251,16 +437,20 @@ async function refreshEditor() {
     ...editing.steps.map((s, i) =>
       el("li", {}, [
         el("span", { textContent: s.title }),
-        el("button", {
-          type: "button",
-          className: "remove",
-          textContent: "×",
-          title: "Remove step",
-          onclick: () => {
-            editing.steps.splice(i, 1);
-            refreshEditor();
+        el(
+          "button",
+          {
+            type: "button",
+            className: "icon-btn",
+            title: "Remove step",
+            ariaLabel: "Remove step",
+            onclick: () => {
+              editing.steps.splice(i, 1);
+              refreshEditor();
+            },
           },
-        }),
+          [icon("close")],
+        ),
       ]),
     ),
   );
@@ -290,11 +480,7 @@ addStepEl.addEventListener("change", () => {
 editor.addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    await invoke("save_recipe", {
-      id: editing.id,
-      name: nameEl.value,
-      steps: editing.steps.map((s) => s.id),
-    });
+    await invoke("save_recipe", { id: editing.id, name: nameEl.value, steps: editing.steps.map((s) => s.id) });
   } catch (err) {
     editorError.textContent = err;
     return;
@@ -302,10 +488,12 @@ editor.addEventListener("submit", async (e) => {
   closeEditor();
   await renderRecipes();
   applySearch();
-  setStatus("Recipe saved", "ok");
+  lastOutput = null;
+  setInfo("ok", "Recipe saved");
 });
 
 $("cancel-recipe").addEventListener("click", closeEditor);
+$("new-recipe").addEventListener("click", () => openEditor(null));
 
 deleteBtn.addEventListener("click", async () => {
   try {
@@ -317,13 +505,44 @@ deleteBtn.addEventListener("click", async () => {
   closeEditor();
   await renderRecipes();
   applySearch();
-  setStatus("Recipe deleted");
+  lastOutput = null;
+  setInfo("ok", "Recipe deleted");
 });
 
-// Typing needs keyboard focus, which the drawer doesn't take by default.
+// Typing needs keyboard focus, which the drawer doesn't take until a drop.
 for (const input of [searchEl, nameEl]) {
   input.addEventListener("pointerdown", () => invoke("focus_drawer"));
 }
+
+// ---------------------------------------------------------------- keyboard
+
+window.addEventListener("keydown", (e) => {
+  const typing = e.target.matches("input, select, textarea");
+  if (editing) {
+    if (e.key === "Escape") closeEditor();
+    return;
+  }
+  if (e.key === "Escape") {
+    if (searchEl.value) {
+      searchEl.value = "";
+      applySearch();
+    } else invoke("hide_drawer");
+    return;
+  }
+  if (!paths.length) return;
+  if ((e.key === "k" && e.ctrlKey) || (e.key === "/" && !typing)) {
+    e.preventDefault();
+    searchEl.focus();
+    return;
+  }
+  if (e.key === "Enter" && !e.target.matches("button")) {
+    e.preventDefault();
+    if (typing && searchEl.value && suggestedBtn.hidden) toolsEl.querySelector("[data-key='1']")?.click();
+    else if (!suggestedBtn.hidden) suggestedRun?.();
+    return;
+  }
+  if (!typing && /^[1-9]$/.test(e.key)) toolsEl.querySelector(`[data-key='${e.key}']`)?.click();
+});
 
 // ---------------------------------------------------------------- drawer
 
@@ -333,15 +552,13 @@ $("settings-btn").addEventListener("click", () => invoke("open_settings"));
 const showShelfCount = (total) => ($("shelf-count").textContent = total || "");
 listen("ferryfile-shelves-count", (e) => showShelfCount(e.payload));
 invoke("shelves_count").then(showShelfCount);
-window.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  if (editing) closeEditor();
-  else invoke("hide_drawer");
-});
 
 listen("ferryfile-drag-start", (e) => {
   document.body.classList.toggle("left", e.payload === "left");
-  reset();
+  paths = [];
+  idle.hidden = false;
+  content.hidden = true;
+  setInfo(null);
   drawer.classList.add("open");
 });
 listen("ferryfile-drag-end", () => drawer.classList.remove("open", "hover"));
@@ -365,4 +582,8 @@ document.addEventListener("drop", (e) => {
   invoke("pin_drawer");
   window.chrome.webview.postMessageWithAdditionalObjects("ferryfile-drop", files);
 });
-listen("ferryfile-dropped", (e) => showFiles(e.payload));
+listen("ferryfile-dropped", async (e) => {
+  await showFiles(e.payload);
+  // The drag is over: take keyboard focus so Enter and 1–9 work right away.
+  invoke("focus_drawer");
+});

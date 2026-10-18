@@ -1,26 +1,26 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { hydrateIcons } from "./icons.js";
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
-const folderPath = $("folder-path");
+
+hydrateIcons();
 
 let state = await invoke("get_settings");
 
-const radio = (name, value) => {
-  const input = document.querySelector(`input[name="${name}"][value="${value}"]`);
-  if (input) input.checked = true;
-};
-
 function render() {
   $("autostart").checked = state.autostart;
-  radio("side", state.drawerSide);
-  radio("delay", String(state.openDelayMs >= 1 ? 400 : 0));
-  radio("output", state.outputDir ? "folder" : "next");
-  folderPath.textContent = state.outputDir ?? "";
+  $("autostart-state").textContent = state.autostart ? "On" : "Off";
+  $("side").value = state.drawerSide;
+  $("delay").value = state.openDelayMs >= 1 ? "400" : "0";
   $("shake").checked = state.shakeToShelf;
+  $("shake-state").textContent = state.shakeToShelf ? "On" : "Off";
   $("sensitivity").value = state.shakeSensitivity;
   $("sensitivity").disabled = !state.shakeToShelf;
+  $("output").value = state.outputDir ? "folder" : "next";
+  $("folder-card").hidden = !state.outputDir;
+  $("folder-path").textContent = state.outputDir ?? "Next to the original file";
   $("about").textContent = `Ferryfile ${state.version} · settings in ${state.configDir}`;
 }
 
@@ -36,45 +36,49 @@ async function save() {
       },
       autostart: state.autostart,
     });
-    statusEl.textContent = "Saved";
-    statusEl.className = "ok";
+    statusEl.textContent = "";
+    statusEl.className = "";
   } catch (err) {
     statusEl.textContent = String(err);
     statusEl.className = "error";
     state = await invoke("get_settings");
-    render();
   }
+  render();
 }
 
 async function chooseFolder() {
   const dir = await invoke("pick_output_dir");
   if (dir) state.outputDir = dir;
-  render();
   return Boolean(dir);
 }
 
+$("autostart").addEventListener("change", (e) => {
+  state.autostart = e.target.checked;
+  save();
+});
+$("side").addEventListener("change", (e) => {
+  state.drawerSide = e.target.value;
+  save();
+});
+$("delay").addEventListener("change", (e) => {
+  state.openDelayMs = Number(e.target.value);
+  save();
+});
 $("shake").addEventListener("change", (e) => {
   state.shakeToShelf = e.target.checked;
-  render();
   save();
 });
 $("sensitivity").addEventListener("change", (e) => {
   state.shakeSensitivity = e.target.value;
   save();
 });
-$("autostart").addEventListener("change", (e) => {
-  state.autostart = e.target.checked;
-  save();
-});
-document.addEventListener("change", async (e) => {
-  const { name, value } = e.target;
-  if (name === "side") state.drawerSide = value;
-  else if (name === "delay") state.openDelayMs = Number(value);
-  else if (name === "output") {
-    // Picking "In a folder" without a folder yet asks for one.
-    if (value === "folder" && !state.outputDir && !(await chooseFolder())) return render();
-    if (value === "next") state.outputDir = null;
-  } else return;
+$("output").addEventListener("change", async (e) => {
+  if (e.target.value === "folder") {
+    // Choosing "A folder I choose" asks for the folder right away.
+    if (!state.outputDir && !(await chooseFolder())) return render();
+  } else {
+    state.outputDir = null;
+  }
   save();
 });
 $("pick").addEventListener("click", async () => {
