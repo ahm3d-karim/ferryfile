@@ -176,7 +176,7 @@ pub fn run_chain(input: &Path, steps: &[String], progress: Progress) -> Result<P
 
 /// `<stem><suffix>.<ext>` next to the input, never overwriting an existing file.
 pub fn output_path(input: &Path, suffix: &str, ext: &str) -> PathBuf {
-    let dir = input.parent().unwrap_or_else(|| Path::new("."));
+    let dir = destination(input);
     let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
     let mut candidate = dir.join(format!("{stem}{suffix}.{ext}"));
     let mut n = 2;
@@ -187,9 +187,25 @@ pub fn output_path(input: &Path, suffix: &str, ext: &str) -> PathBuf {
     candidate
 }
 
-/// Creates a new, uniquely named `<stem><suffix>` folder next to the input.
+static OUTPUT_DIR: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+/// Where outputs go: `None` means next to each input file.
+pub fn set_output_dir(dir: Option<PathBuf>) {
+    *OUTPUT_DIR.write().unwrap() = dir;
+}
+
+/// The configured output folder if it still exists, else the input's folder.
+fn destination(input: &Path) -> PathBuf {
+    match OUTPUT_DIR.read().unwrap().as_ref() {
+        Some(dir) if dir.is_dir() => dir.clone(),
+        _ => input.parent().unwrap_or_else(|| Path::new(".")).to_path_buf(),
+    }
+}
+
+/// Creates a new, uniquely named `<stem><suffix>` folder next to the input
+/// (or in the configured output folder).
 pub fn output_dir(input: &Path, suffix: &str) -> Result<PathBuf, String> {
-    let dir = input.parent().unwrap_or_else(|| Path::new("."));
+    let dir = destination(input);
     let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
     let mut candidate = dir.join(format!("{stem}{suffix}"));
     let mut n = 2;

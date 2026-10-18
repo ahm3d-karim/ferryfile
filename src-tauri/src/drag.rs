@@ -13,6 +13,8 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize};
 
+use crate::settings::Side;
+
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -71,7 +73,7 @@ pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
         while let Ok(ev) = rx.recv() {
             match ev {
-                Ev::DragStart => show_drawer(&app),
+                Ev::DragStart => drag_started(&app),
                 Ev::DragEnd => schedule_hide(&app),
             }
         }
@@ -148,7 +150,8 @@ fn show_drawer(app: &AppHandle) {
         return;
     };
 
-    // Dock to the right edge of the monitor under the cursor (falls back to primary).
+    // Dock to the configured edge of the monitor under the cursor (falls back to primary).
+    let side = crate::settings::current().drawer_side;
     let monitor = app
         .cursor_position()
         .ok()
@@ -158,16 +161,29 @@ fn show_drawer(app: &AppHandle) {
         let width = (DRAWER_WIDTH_LOGICAL * m.scale_factor()) as u32;
         let size = m.size();
         let pos = m.position();
+        let x = match side {
+            Side::Right => pos.x + size.width as i32 - width as i32,
+            Side::Left => pos.x,
+        };
         let _ = w.set_size(PhysicalSize::new(width, size.height));
-        let _ = w.set_position(PhysicalPosition::new(
-            pos.x + size.width as i32 - width as i32,
-            pos.y,
-        ));
+        let _ = w.set_position(PhysicalPosition::new(x, pos.y));
     } else {
         let _ = w.set_size(LogicalSize::new(DRAWER_WIDTH_LOGICAL, 800.0));
     }
     let _ = w.show();
-    let _ = w.emit("skiff-drag-start", ());
+    let _ = w.emit("skiff-drag-start", side);
+}
+
+/// Shows the drawer after the configured delay, unless the drag ended first.
+fn drag_started(app: &AppHandle) {
+    let delay = crate::settings::current().open_delay_ms;
+    if delay > 0 {
+        std::thread::sleep(Duration::from_millis(delay.into()));
+        if !DRAGGING.load(Ordering::Relaxed) {
+            return;
+        }
+    }
+    show_drawer(app);
 }
 
 pub fn pin() {

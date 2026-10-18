@@ -71,8 +71,8 @@ pub fn shelf_clear(app: AppHandle, shelf: State<Shelf>) {
 }
 
 /// Shows the shelf without taking focus. The first time, it goes to the
-/// bottom of the screen just left of the drawer, so the two never overlap;
-/// after that it stays wherever the user dragged it.
+/// bottom of the screen just inside the drawer's edge, so the two never
+/// overlap; after that it stays wherever the user dragged it.
 #[tauri::command]
 pub fn show_shelf(app: AppHandle) {
     static PLACED: std::sync::Once = std::sync::Once::new();
@@ -83,7 +83,10 @@ pub fn show_shelf(app: AppHandle) {
             let margin = (16.0 * scale) as i32;
             let drawer = (crate::drag::DRAWER_WIDTH_LOGICAL * scale) as i32;
             let (mw, mh) = (m.size().width as i32, m.size().height as i32);
-            let x = m.position().x + mw - drawer - size.width as i32 - margin;
+            let x = match crate::settings::current().drawer_side {
+                crate::settings::Side::Right => m.position().x + mw - drawer - size.width as i32 - margin,
+                crate::settings::Side::Left => m.position().x + drawer + margin,
+            };
             // Leave room for the taskbar.
             let y = m.position().y + mh - size.height as i32 - (64.0 * scale) as i32;
             let _ = w.set_position(PhysicalPosition::new(x.max(m.position().x), y));

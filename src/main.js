@@ -329,6 +329,7 @@ for (const input of [searchEl, nameEl]) {
 
 $("close").addEventListener("click", () => invoke("hide_drawer"));
 $("shelf-btn").addEventListener("click", () => invoke("toggle_shelf"));
+$("settings-btn").addEventListener("click", () => invoke("open_settings"));
 const showShelfCount = (items) => ($("shelf-count").textContent = items.length || "");
 listen("skiff-shelf-changed", (e) => showShelfCount(e.payload));
 invoke("shelf_items").then(showShelfCount);
@@ -338,7 +339,8 @@ window.addEventListener("keydown", (e) => {
   else invoke("hide_drawer");
 });
 
-listen("skiff-drag-start", () => {
+listen("skiff-drag-start", (e) => {
+  document.body.classList.toggle("left", e.payload === "left");
   reset();
   drawer.classList.add("open");
 });

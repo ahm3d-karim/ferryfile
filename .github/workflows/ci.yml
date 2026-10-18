@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # ffmpeg, pandoc and pdfium are git-ignored; the Tauri build needs them.
+      - name: Cache bundled tools
+        id: tools
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/binaries
+          key: tools-${{ hashFiles('scripts/fetch-*.ps1') }}
+
+      - name: Fetch bundled tools
+        if: steps.tools.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          ./scripts/fetch-ffmpeg.ps1
+          ./scripts/fetch-doc-tools.ps1
+
+      - run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Unit tests
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: Conversion tests (real ffmpeg, pandoc, pdfium)
+        working-directory: src-tauri
+        run: cargo test --lib -- --ignored

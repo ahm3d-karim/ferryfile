@@ -16,6 +16,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-dialog = "2"
 tauri-plugin-drag = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
 pdfium-render = "0.9"
 calamine = { version = "0.36", features = ["dates"] }
 typst = "0.15"

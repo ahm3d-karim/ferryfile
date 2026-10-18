@@ -29,6 +29,19 @@
         "dragDropEnabled": false
       },
       {
+        "label": "settings",
+        "title": "Skiff Settings",
+        "url": "settings.html",
+        "width": 460,
+        "height": 520,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "center": true,
+        "visible": false,
+        "dragDropEnabled": false
+      },
+      {
         "label": "shelf",
         "title": "Skiff Shelf",
         "url": "shelf.html",
@@ -49,9 +62,27 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "publisher": "Ahmad Karim",
+    "homepage": "https://github.com/ahm3d-karim/skiff",
+    "category": "Utility",
+    "shortDescription": "Drag-and-drop file converter",
+    "longDescription": "Skiff converts images, audio, video, PDFs, documents and spreadsheets offline. Drag a file from Explorer, drop it on the drawer, pick an action.",
     "externalBin": ["binaries/ffmpeg", "binaries/pandoc"],
-    "resources": { "binaries/pdfium.dll": "pdfium.dll" },
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"]
+    "resources": {
+      "binaries/pdfium.dll": "pdfium.dll",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"],
+    "windows": {
+      "signCommand": {
+        "cmd": "powershell",
+        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "../scripts/sign.ps1", "%1"]
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
   }
 }
