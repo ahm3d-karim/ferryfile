@@ -2,6 +2,9 @@
 name = "skiff"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "Drag-and-drop file converter for Windows"
+repository = "https://github.com/ahm3d-karim/skiff"
 
 [lib]
 name = "skiff_lib"

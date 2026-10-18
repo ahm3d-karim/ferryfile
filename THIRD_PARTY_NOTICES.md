@@ -2,7 +2,7 @@
 
 Skiff's installer bundles the following programs unmodified, as separate
 executables or libraries. Their licenses apply to them; Skiff's own code is
-covered by its own license.
+covered by the MIT License (see LICENSE).
 
 ## FFmpeg
 

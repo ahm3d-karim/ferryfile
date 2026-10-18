@@ -64,6 +64,7 @@
     "active": true,
     "targets": ["nsis"],
     "publisher": "Ahmad Karim",
+    "copyright": "Copyright (c) 2026 Ahmad Karim. MIT License.",
     "homepage": "https://github.com/ahm3d-karim/skiff",
     "category": "Utility",
     "shortDescription": "Drag-and-drop file converter",

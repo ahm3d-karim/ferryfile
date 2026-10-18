@@ -10,6 +10,7 @@ Images, audio, video, PDFs, documents and spreadsheets, all on your machine.
 [![CI](https://github.com/ahm3d-karim/skiff/actions/workflows/ci.yml/badge.svg)](https://github.com/ahm3d-karim/skiff/actions/workflows/ci.yml)
 ![Platform: Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4)
 ![Built with Tauri + Rust](https://img.shields.io/badge/built%20with-Tauri%202%20%2B%20Rust-2dd4bf)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 </div>
 
@@ -220,8 +221,8 @@ bundled tools).
 
 ## Licenses
 
-Skiff bundles FFmpeg (LGPL-2.1+), pandoc (GPL-2.0+) and PDFium (BSD-3-Clause /
-Apache-2.0) as separate, unmodified programs. See
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details and sources.
+Skiff is released under the [MIT License](LICENSE).
 
-A license for Skiff's own code has not been chosen yet.
+It bundles FFmpeg (LGPL-2.1+), pandoc (GPL-2.0+) and PDFium (BSD-3-Clause /
+Apache-2.0) as separate, unmodified programs; their own licenses apply to them.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details and sources.
