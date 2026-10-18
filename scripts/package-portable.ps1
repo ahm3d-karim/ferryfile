@@ -1,19 +1,19 @@
-# Packs the release build into a portable zip (no installer): skiff.exe plus
+# Packs the release build into a portable zip (no installer): ferryfile.exe plus
 # the bundled tools, exactly as Tauri lays them out next to the exe. Scoop and
 # the npm launcher ship this zip. Run after `npx tauri build`.
 #
 # Writes to src-tauri/target/release/bundle/portable/:
-#   Skiff_<version>_x64-portable.zip and a matching .sha256 file.
+#   Ferryfile_<version>_x64-portable.zip and a matching .sha256 file.
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $release = Join-Path $root 'src-tauri\target\release'
 $version = (Get-Content (Join-Path $root 'src-tauri\tauri.conf.json') -Raw | ConvertFrom-Json).version
 $outDir = Join-Path $release 'bundle\portable'
-$zip = Join-Path $outDir "Skiff_${version}_x64-portable.zip"
+$zip = Join-Path $outDir "Ferryfile_${version}_x64-portable.zip"
 
 $files = @(
-    (Join-Path $release 'skiff.exe'),
+    (Join-Path $release 'ferryfile.exe'),
     (Join-Path $release 'ffmpeg.exe'),
     (Join-Path $release 'pandoc.exe'),
     (Join-Path $release 'pdfium.dll'),

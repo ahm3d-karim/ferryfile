@@ -1,4 +1,4 @@
-# Downloads Skiff's document tools into src-tauri/binaries:
+# Downloads Ferryfile's document tools into src-tauri/binaries:
 #   - pandoc (latest Windows release, github.com/jgm/pandoc)  -> pandoc-x86_64-pc-windows-msvc.exe (sidecar)
 #   - pdfium (bblanchon/pdfium-binaries, pinned to the API pdfium-render targets) -> pdfium.dll
 #
@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $pdfiumTag = 'chromium/7881'   # keep in sync with pdfium-render's `pdfium_latest`
 $root = Split-Path -Parent $PSScriptRoot
 $bin = Join-Path $root 'src-tauri\binaries'
-$tmp = Join-Path ([IO.Path]::GetTempPath()) ("skiff-doctools-" + [guid]::NewGuid())
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("ferryfile-doctools-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Force $bin, $tmp | Out-Null
 
 try {

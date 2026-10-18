@@ -281,7 +281,7 @@ mod tests {
     #[ignore]
     fn every_action_runs() {
         let ff = ffmpeg().expect("ffmpeg available");
-        let dir = std::env::temp_dir().join(format!("skiff-ff-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ferryfile-ff-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
         let gen = |out: &Path, args: &[&str]| {

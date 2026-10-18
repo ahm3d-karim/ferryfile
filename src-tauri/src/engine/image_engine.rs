@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn convert_resize_compress() {
-        let dir = std::env::temp_dir().join(format!("skiff-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ferryfile-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let input = dir.join("sample.png");
         RgbaImage::from_pixel(40, 20, Rgba([10, 200, 180, 128])).save(&input).unwrap();

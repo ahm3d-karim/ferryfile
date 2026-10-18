@@ -71,7 +71,7 @@ draggable(dragAll, () => items);
 clear.addEventListener("click", () => invoke("shelf_clear"));
 $("hide").addEventListener("click", () => invoke("hide_shelf"));
 
-listen("skiff-shelf-changed", (e) => {
+listen("ferryfile-shelf-changed", (e) => {
   items = e.payload;
   render();
 });
@@ -89,10 +89,10 @@ document.addEventListener("drop", (e) => {
   e.preventDefault();
   shelf.classList.remove("hover");
   if (e.dataTransfer.files.length) {
-    window.chrome.webview.postMessageWithAdditionalObjects("skiff-drop", e.dataTransfer.files);
+    window.chrome.webview.postMessageWithAdditionalObjects("ferryfile-drop", e.dataTransfer.files);
   }
 });
-listen("skiff-dropped", (e) => invoke("shelf_add", { paths: e.payload }));
+listen("ferryfile-dropped", (e) => invoke("shelf_add", { paths: e.payload }));
 
 items = await invoke("shelf_items");
 render();

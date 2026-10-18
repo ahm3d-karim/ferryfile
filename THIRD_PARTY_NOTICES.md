@@ -1,7 +1,7 @@
 # Third-party notices
 
-Skiff's installer bundles the following programs unmodified, as separate
-executables or libraries. Their licenses apply to them; Skiff's own code is
+Ferryfile's installer bundles the following programs unmodified, as separate
+executables or libraries. Their licenses apply to them; Ferryfile's own code is
 covered by the MIT License (see LICENSE).
 
 ## FFmpeg
@@ -29,12 +29,12 @@ covered by the MIT License (see LICENSE).
 
 ## Rust crates
 
-Skiff is compiled with many crates from crates.io, including Tauri (MIT/Apache-2.0),
+Ferryfile is compiled with many crates from crates.io, including Tauri (MIT/Apache-2.0),
 Typst (Apache-2.0), calamine (MIT), image (MIT/Apache-2.0) and pdfium-render
 (MIT/Apache-2.0). Run `cargo about` or `cargo license` in `src-tauri` for the
 complete list.
 
 ## Fonts
 
-PDFs typeset by Skiff can embed fonts bundled with Typst (typst-assets), which
+PDFs typeset by Ferryfile can embed fonts bundled with Typst (typst-assets), which
 are under the SIL Open Font License 1.1, or fonts installed on your system.

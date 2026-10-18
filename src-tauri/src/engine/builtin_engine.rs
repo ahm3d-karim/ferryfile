@@ -1,4 +1,4 @@
-//! Skiff's own converters, no LibreOffice needed:
+//! Ferryfile's own converters, no LibreOffice needed:
 //! - spreadsheets (XLSX/XLSM/XLSB/XLS/ODS via calamine, CSV/TSV) to CSV,
 //!   Markdown, HTML and PDF;
 //! - documents to PDF: pandoc writes Typst markup, which we typeset in-process;
@@ -175,7 +175,7 @@ fn write_pdf(markup: String, root: &Path, input: &Path) -> Result<PathBuf, Strin
 /// Document -> Typst markup (pandoc) -> PDF (in-process).
 fn document_to_pdf(input: &Path, reader: &str) -> Result<PathBuf, String> {
     let work = std::env::temp_dir().join(format!(
-        "skiff-typeset-{}-{}",
+        "ferryfile-typeset-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn workbook_actions() {
-        let dir = std::env::temp_dir().join(format!("skiff-xlsx-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ferryfile-xlsx-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let xlsx = dir.join("book.xlsx");
         let mut wb = rust_xlsxwriter::Workbook::new();
@@ -329,7 +329,7 @@ mod tests {
     #[test]
     #[ignore]
     fn documents_to_pdf() {
-        let dir = std::env::temp_dir().join(format!("skiff-builtin-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ferryfile-builtin-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let md = dir.join("report.md");
         std::fs::write(&md, "# Report\n\nSome *styled* text.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n").unwrap();

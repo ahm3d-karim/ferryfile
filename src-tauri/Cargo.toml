@@ -1,13 +1,13 @@
 [package]
-name = "skiff"
+name = "ferryfile"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Drag-and-drop file converter for Windows"
-repository = "https://github.com/ahm3d-karim/skiff"
+repository = "https://github.com/ahm3d-karim/ferryfile"
 
 [lib]
-name = "skiff_lib"
+name = "ferryfile_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

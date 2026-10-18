@@ -256,7 +256,7 @@ mod tests {
     #[test]
     #[ignore]
     fn pdf_round_trip() {
-        let dir = std::env::temp_dir().join(format!("skiff-pdf-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ferryfile-pdf-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let a = dir.join("a.png");
         let b = dir.join("b.jpg");

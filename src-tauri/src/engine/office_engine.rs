@@ -72,7 +72,7 @@ impl Engine for OfficeEngine {
 
         // A private profile and output folder: no clash with a running
         // LibreOffice window, and we know exactly which file it wrote.
-        let work = std::env::temp_dir().join(format!("skiff-office-{}-{}", std::process::id(), rand_suffix()));
+        let work = std::env::temp_dir().join(format!("ferryfile-office-{}-{}", std::process::id(), rand_suffix()));
         let profile = work.join("profile");
         let outdir = work.join("out");
         std::fs::create_dir_all(&outdir).map_err(|e| e.to_string())?;

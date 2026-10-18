@@ -1,8 +1,8 @@
 # Code-signs one file; Tauri calls this for every binary it bundles.
 #
 # Configure ONE of these (environment variables or GitHub secrets):
-#   SKIFF_SIGN_THUMBPRINT                     certificate already in the Windows cert store
-#   SKIFF_SIGN_PFX + SKIFF_SIGN_PFX_PASSWORD  base64-encoded .pfx and its password
+#   FERRYFILE_SIGN_THUMBPRINT                     certificate already in the Windows cert store
+#   FERRYFILE_SIGN_PFX + FERRYFILE_SIGN_PFX_PASSWORD  base64-encoded .pfx and its password
 # With neither set, the file is left unsigned so local builds still work.
 param([Parameter(Mandatory)][string]$File)
 $ErrorActionPreference = 'Stop'
@@ -10,8 +10,8 @@ $ErrorActionPreference = 'Stop'
 $timestamp = 'http://timestamp.digicert.com'
 $name = [IO.Path]::GetFileName($File)
 
-if (-not $env:SKIFF_SIGN_THUMBPRINT -and -not $env:SKIFF_SIGN_PFX) {
-    Write-Host "skiff-sign: no certificate configured, leaving $name unsigned"
+if (-not $env:FERRYFILE_SIGN_THUMBPRINT -and -not $env:FERRYFILE_SIGN_PFX) {
+    Write-Host "ferryfile-sign: no certificate configured, leaving $name unsigned"
     exit 0
 }
 
@@ -22,17 +22,17 @@ if (-not $signtool) {
 }
 if (-not $signtool) { throw 'signtool.exe not found; install the Windows SDK' }
 
-$common = @('sign', '/fd', 'sha256', '/tr', $timestamp, '/td', 'sha256', '/d', 'Skiff')
-if ($env:SKIFF_SIGN_THUMBPRINT) {
-    & $signtool @common /sha1 $env:SKIFF_SIGN_THUMBPRINT $File
+$common = @('sign', '/fd', 'sha256', '/tr', $timestamp, '/td', 'sha256', '/d', 'Ferryfile')
+if ($env:FERRYFILE_SIGN_THUMBPRINT) {
+    & $signtool @common /sha1 $env:FERRYFILE_SIGN_THUMBPRINT $File
 } else {
-    $pfx = Join-Path ([IO.Path]::GetTempPath()) ("skiff-sign-" + [guid]::NewGuid() + '.pfx')
+    $pfx = Join-Path ([IO.Path]::GetTempPath()) ("ferryfile-sign-" + [guid]::NewGuid() + '.pfx')
     try {
-        [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SKIFF_SIGN_PFX))
-        & $signtool @common /f $pfx /p $env:SKIFF_SIGN_PFX_PASSWORD $File
+        [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:FERRYFILE_SIGN_PFX))
+        & $signtool @common /f $pfx /p $env:FERRYFILE_SIGN_PFX_PASSWORD $File
     } finally {
         Remove-Item $pfx -Force -ErrorAction SilentlyContinue
     }
 }
 if ($LASTEXITCODE) { throw "signtool failed for $name (exit $LASTEXITCODE)" }
-Write-Host "skiff-sign: signed $name"
+Write-Host "ferryfile-sign: signed $name"

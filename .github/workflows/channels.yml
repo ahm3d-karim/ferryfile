@@ -3,10 +3,10 @@ name: Publish channels
 # Runs when a GitHub release is published (not while it's a draft), so every
 # channel points at public, final assets.
 #
-# - npm (skiff-app): set the repository variable PUBLISH_NPM=true. Uses npm
+# - npm (ferryfile): set the repository variable PUBLISH_NPM=true. Uses npm
 #   trusted publishing (OIDC, with provenance); for the very first publish,
 #   add an NPM_TOKEN secret instead (see packaging/README.md).
-# - winget (AhmadKarim.Skiff): set PUBLISH_WINGET=true and a WINGET_TOKEN
+# - winget (Ferryfile.Ferryfile): set PUBLISH_WINGET=true and a WINGET_TOKEN
 #   secret (classic PAT with public_repo) once the package exists in
 #   microsoft/winget-pkgs and you have a fork of it.
 # - Scoop: nothing to do here; the bucket repo picks up new releases itself.
@@ -47,7 +47,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${TAG#v}"
-          zip="Skiff_${version}_x64-portable.zip"
+          zip="Ferryfile_${version}_x64-portable.zip"
           gh release download "$TAG" --pattern "$zip.sha256" --dir /tmp/release
           sha=$(cut -d' ' -f1 "/tmp/release/$zip.sha256")
           url="https://github.com/${{ github.repository }}/releases/download/$TAG/$zip"
@@ -69,7 +69,7 @@ jobs:
     steps:
       - uses: vedantmgoyal9/winget-releaser@v2
         with:
-          identifier: AhmadKarim.Skiff
+          identifier: Ferryfile.Ferryfile
           installers-regex: '_x64-setup\.exe$'
           release-tag: ${{ github.event.release.tag_name || inputs.tag }}
           token: ${{ secrets.WINGET_TOKEN }}

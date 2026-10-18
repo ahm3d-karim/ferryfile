@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Skiff",
+  "productName": "Ferryfile",
   "version": "0.1.0",
-  "identifier": "app.skiff.desktop",
+  "identifier": "app.ferryfile.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "drawer",
-        "title": "Skiff",
+        "title": "Ferryfile",
         "url": "index.html",
         "width": 340,
         "height": 800,
@@ -30,7 +30,7 @@
       },
       {
         "label": "settings",
-        "title": "Skiff Settings",
+        "title": "Ferryfile Settings",
         "url": "settings.html",
         "width": 460,
         "height": 520,
@@ -43,7 +43,7 @@
       },
       {
         "label": "shelf",
-        "title": "Skiff Shelf",
+        "title": "Ferryfile Shelf",
         "url": "shelf.html",
         "width": 260,
         "height": 340,
@@ -63,12 +63,12 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "publisher": "Ahmad Karim",
+    "publisher": "Ferryfile",
     "copyright": "Copyright (c) 2026 Ahmad Karim. MIT License.",
-    "homepage": "https://github.com/ahm3d-karim/skiff",
+    "homepage": "https://github.com/ahm3d-karim/ferryfile",
     "category": "Utility",
     "shortDescription": "Drag-and-drop file converter",
-    "longDescription": "Skiff converts images, audio, video, PDFs, documents and spreadsheets offline. Drag a file from Explorer, drop it on the drawer, pick an action.",
+    "longDescription": "Ferryfile converts images, audio, video, PDFs, documents and spreadsheets offline. Drag a file from Explorer, drop it on the drawer, pick an action.",
     "externalBin": ["binaries/ffmpeg", "binaries/pandoc"],
     "resources": {
       "binaries/pdfium.dll": "pdfium.dll",

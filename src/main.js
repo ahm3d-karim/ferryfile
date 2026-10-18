@@ -55,7 +55,7 @@ function setProgress(fraction) {
   if (fraction != null) progressEl.value = fraction;
 }
 
-listen("skiff-progress", (e) => {
+listen("ferryfile-progress", (e) => {
   if (running) setProgress((running.index + e.payload.fraction) / running.count);
 });
 
@@ -331,7 +331,7 @@ $("close").addEventListener("click", () => invoke("hide_drawer"));
 $("shelf-btn").addEventListener("click", () => invoke("toggle_shelf"));
 $("settings-btn").addEventListener("click", () => invoke("open_settings"));
 const showShelfCount = (items) => ($("shelf-count").textContent = items.length || "");
-listen("skiff-shelf-changed", (e) => showShelfCount(e.payload));
+listen("ferryfile-shelf-changed", (e) => showShelfCount(e.payload));
 invoke("shelf_items").then(showShelfCount);
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
@@ -339,12 +339,12 @@ window.addEventListener("keydown", (e) => {
   else invoke("hide_drawer");
 });
 
-listen("skiff-drag-start", (e) => {
+listen("ferryfile-drag-start", (e) => {
   document.body.classList.toggle("left", e.payload === "left");
   reset();
   drawer.classList.add("open");
 });
-listen("skiff-drag-end", () => drawer.classList.remove("open", "hover"));
+listen("ferryfile-drag-end", () => drawer.classList.remove("open", "hover"));
 
 // Drops use WebView2's native drag-and-drop (see src-tauri/src/dropbridge.rs):
 // the page accepts the drop and hands the File objects to Rust, which replies
@@ -363,6 +363,6 @@ document.addEventListener("drop", (e) => {
   const files = e.dataTransfer.files;
   if (!files.length) return;
   invoke("pin_drawer");
-  window.chrome.webview.postMessageWithAdditionalObjects("skiff-drop", files);
+  window.chrome.webview.postMessageWithAdditionalObjects("ferryfile-drop", files);
 });
-listen("skiff-dropped", (e) => showFiles(e.payload));
+listen("ferryfile-dropped", (e) => showFiles(e.payload));

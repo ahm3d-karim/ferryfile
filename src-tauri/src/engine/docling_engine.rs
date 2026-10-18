@@ -37,7 +37,7 @@ impl Engine for DoclingEngine {
             return Err(format!("Unknown action '{action_id}'"));
         }
         let exe = docling().ok_or("Docling isn't installed")?;
-        let work = std::env::temp_dir().join(format!("skiff-docling-{}", std::process::id()));
+        let work = std::env::temp_dir().join(format!("ferryfile-docling-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&work);
         std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
 

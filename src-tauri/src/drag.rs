@@ -60,7 +60,7 @@ pub fn set_focusable(w: &tauri::WebviewWindow, focusable: bool) {
 }
 
 fn hide(w: &tauri::WebviewWindow) {
-    let _ = w.emit("skiff-drag-end", ());
+    let _ = w.emit("ferryfile-drag-end", ());
     let _ = w.hide();
     set_focusable(w, false);
 }
@@ -171,7 +171,7 @@ fn show_drawer(app: &AppHandle) {
         let _ = w.set_size(LogicalSize::new(DRAWER_WIDTH_LOGICAL, 800.0));
     }
     let _ = w.show();
-    let _ = w.emit("skiff-drag-start", side);
+    let _ = w.emit("ferryfile-drag-start", side);
 }
 
 /// Shows the drawer after the configured delay, unless the drag ended first.

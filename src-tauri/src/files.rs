@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn transfers_without_overwriting() {
-        let root = std::env::temp_dir().join(format!("skiff-files-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("ferryfile-files-{}", std::process::id()));
         let (a, b) = (root.join("a"), root.join("b"));
         std::fs::create_dir_all(a.join("sub")).unwrap();
         std::fs::create_dir_all(&b).unwrap();

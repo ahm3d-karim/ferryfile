@@ -1459,6 +1459,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3296eb97d869113eaf148a6bdf01884e90b3828ad7ae2340b0f93362fc158611"
 
 [[package]]
+name = "ferryfile"
+version = "0.1.0"
+dependencies = [
+ "calamine",
+ "clipboard-win",
+ "image",
+ "pdfium-render",
+ "rust_xlsxwriter",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-drag",
+ "tauri-plugin-single-instance",
+ "typst",
+ "typst-kit",
+ "typst-layout",
+ "typst-pdf",
+ "webview2-com",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "field-offset"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4643,31 +4668,6 @@ name = "siphasher"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
-
-[[package]]
-name = "skiff"
-version = "0.1.0"
-dependencies = [
- "calamine",
- "clipboard-win",
- "image",
- "pdfium-render",
- "rust_xlsxwriter",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-drag",
- "tauri-plugin-single-instance",
- "typst",
- "typst-kit",
- "typst-layout",
- "typst-pdf",
- "webview2-com",
- "windows 0.62.2",
-]
 
 [[package]]
 name = "skrifa"
