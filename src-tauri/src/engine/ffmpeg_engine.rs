@@ -178,9 +178,16 @@ fn run_ffmpeg(ff: &Ffmpeg, input: &Path, args: &[String], out: &Path, progress: 
         }
     });
 
-    // stdout: `-progress` key=value lines.
+    // stdout: `-progress` key=value lines (several a second), also our chance
+    // to stop a cancelled job.
     let stdout = child.stdout.take().unwrap();
+    let mut cancelled = false;
     for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        if super::jobs::is_cancelled() {
+            let _ = child.kill();
+            cancelled = true;
+            break;
+        }
         if let Some(us) = line.strip_prefix("out_time_us=").and_then(|v| v.parse::<f64>().ok()) {
             if let Some(total) = *duration.lock().unwrap() {
                 if total > 0.0 {
@@ -192,6 +199,10 @@ fn run_ffmpeg(ff: &Ffmpeg, input: &Path, args: &[String], out: &Path, progress: 
 
     let status = child.wait().map_err(|e| e.to_string())?;
     let _ = err_thread.join();
+    if cancelled {
+        let _ = std::fs::remove_file(out);
+        return Err(super::jobs::CANCELLED.into());
+    }
     if status.success() {
         progress(1.0);
         Ok(())
@@ -316,6 +327,36 @@ mod tests {
                 println!("ok {:<14} -> {} ({size} bytes)", action.id, out.file_name().unwrap().to_string_lossy());
             }
         }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Needs ffmpeg, so opt-in: `cargo test -- --ignored`
+    #[test]
+    #[ignore]
+    fn cancel_stops_ffmpeg() {
+        let ff = ffmpeg().expect("ffmpeg available");
+        let dir = std::env::temp_dir().join(format!("ferryfile-cancel-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let video = dir.join("long.mov");
+        let made = tool_command(&ff.exe)
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=30:duration=60", "-c:v", "mpeg4"])
+            .arg(&video)
+            .status()
+            .unwrap();
+        assert!(made.success());
+
+        let input = video.clone();
+        let worker = std::thread::spawn(move || {
+            let _job = super::super::jobs::begin(Some("cancel-test"));
+            FfmpegEngine.run("convert:webm", &input, &|_| {})
+        });
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        assert!(super::super::jobs::cancel("cancel-test"), "job should still be running");
+        let started = std::time::Instant::now();
+        let result = worker.join().unwrap();
+        assert_eq!(result, Err(super::super::jobs::CANCELLED.to_string()));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5), "stops promptly");
+        assert!(!dir.join("long.webm").exists(), "partial output removed");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

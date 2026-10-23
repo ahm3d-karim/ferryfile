@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import { icon, hydrateIcons, iconForPath } from "./icons.js";
 
 const $ = (id) => document.getElementById(id);
@@ -71,6 +72,7 @@ function preferredIds(path, multiple) {
 // ---------------------------------------------------------------- info bar
 
 let lastOutput = null;
+let lastOutputs = [];
 
 function setInfo(kind, text = "") {
   const bar = $("infobar");
@@ -81,42 +83,108 @@ function setInfo(kind, text = "") {
   const state = $("info-state");
   state.replaceChildren(icon(kind === "ok" ? "check" : kind === "error" ? "error" : "info"));
   $("progress").hidden = kind !== "busy";
+  $("info-cancel").hidden = kind !== "busy";
   $("info-show").hidden = !(kind === "ok" && lastOutput);
+  // A finished result can be dragged straight into another app.
+  const draggableResult = kind === "ok" && lastOutputs.length > 0;
+  bar.classList.toggle("can-drag", draggableResult);
+  bar.title = draggableResult ? "Drag the result into any app" : "";
 }
 $("info-show").addEventListener("click", () => lastOutput && invoke("reveal", { path: lastOutput }));
 
-// ---------------------------------------------------------------- running
+// Drag the finished result out of the drawer (same native drag as shelves).
+const iconReady = invoke("drag_icon");
+$("infobar").addEventListener("pointerdown", (down) => {
+  if (down.button !== 0 || !$("infobar").classList.contains("can-drag") || down.target.closest("button")) return;
+  const move = async (e) => {
+    if (Math.hypot(e.clientX - down.clientX, e.clientY - down.clientY) < 4) return;
+    stop();
+    await startDrag({ item: [...lastOutputs], icon: await iconReady });
+  };
+  const stop = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", stop);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", stop);
+});
 
-let running = null; // { index, count }
+// ---------------------------------------------------------------- jobs
+
+// Jobs run one at a time; starting another while one runs queues it.
+const queue = []; // { label, job, targets }
+let running = null; // { label, index, count, jobId, cancelled, started }
 
 listen("ferryfile-progress", (e) => {
   if (running) $("progress").value = (running.index + e.payload.fraction) / running.count;
 });
 
-/** Runs `job(path)` for every target (by default each dropped file). */
-async function runJob(label, job, targets = paths) {
-  if (running) return;
-  setInfo("busy", `${label}…`);
-  $("progress").value = 0;
-  toolsEl.classList.add("disabled");
-  const results = [];
-  try {
-    for (const [index, p] of targets.entries()) {
-      running = { index, count: targets.length };
-      try {
-        results.push(await job(p));
-      } catch (err) {
-        setInfo("error", `${basename(p)}: ${err}`);
-        return;
-      }
-    }
-    lastOutput = results.at(-1) ?? null;
-    setInfo("ok", `Saved ${results.map(basename).join(", ")}`);
-  } finally {
-    running = null;
-    toolsEl.classList.remove("disabled");
+const jobLabel = () => {
+  const more = queue.length ? ` · ${queue.length} more queued` : "";
+  return `${running.label}${running.count > 1 ? ` (${running.index + 1} of ${running.count})` : ""}…${more}`;
+};
+
+/**
+ * Queues `job(path, jobId)` for every target (by default each dropped file);
+ * each call gets a job id the Cancel button can stop.
+ */
+function runJob(label, job, targets = paths) {
+  queue.push({ label, job, targets: [...targets] });
+  if (running) setInfo("busy", jobLabel());
+  else pump();
+}
+
+/** Long jobs, and anything finishing while the drawer is hidden, get a Windows notification. */
+function notifyIfAway(started, body) {
+  if (Date.now() - started > 8000 || !drawer.classList.contains("open")) {
+    invoke("notify", { title: "Ferryfile", body });
   }
 }
+
+async function pump() {
+  const task = queue.shift();
+  if (!task) return;
+  running = { label: task.label, index: 0, count: task.targets.length, jobId: null, cancelled: false, started: Date.now() };
+  $("progress").value = 0;
+  const results = [];
+  let failure = null;
+  for (const [index, p] of task.targets.entries()) {
+    if (running.cancelled) break;
+    running.index = index;
+    running.jobId = crypto.randomUUID();
+    setInfo("busy", jobLabel());
+    try {
+      results.push(await task.job(p, running.jobId));
+    } catch (err) {
+      if (String(err) !== "Cancelled") failure = `${basename(p)}: ${err}`;
+      break;
+    }
+  }
+  const { cancelled, started } = running;
+  running = null;
+  if (failure) {
+    setInfo("error", failure);
+    notifyIfAway(started, `Couldn't finish: ${failure}`);
+  } else if (cancelled) {
+    lastOutputs = [];
+    setInfo("info", results.length ? `Cancelled after ${results.map(basename).join(", ")}` : "Cancelled");
+  } else {
+    lastOutputs = results;
+    lastOutput = results.at(-1) ?? null;
+    const saved = `Saved ${results.map(basename).join(", ")}`;
+    setInfo("ok", saved);
+    notifyIfAway(started, saved);
+  }
+  pump();
+}
+
+$("info-cancel").addEventListener("click", () => {
+  if (!running) return;
+  running.cancelled = true;
+  queue.length = 0; // Cancel stops everything that was waiting, too
+  if (running.jobId) invoke("cancel_job", { jobId: running.jobId });
+  setInfo("busy", "Cancelling…");
+});
 
 /** Quick file actions: no progress, just a confirmation. */
 async function quick(done, task) {
@@ -124,6 +192,7 @@ async function quick(done, task) {
     const r = await task();
     if (r === false) return;
     lastOutput = null;
+    lastOutputs = [];
     if (done) setInfo("ok", done);
   } catch (err) {
     setInfo("error", String(err));
@@ -165,7 +234,7 @@ function group(heading, body) {
 }
 
 const runAction = (a) => () =>
-  runJob(`${a.group}: ${a.label}`, (p) => invoke("run_action", { actionId: a.id, path: p }));
+  runJob(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId }));
 
 // ---------------------------------------------------------------- render
 
@@ -186,7 +255,10 @@ async function renderActions() {
     $("suggested-label").textContent = isCombine ? `Combine into ${pick.label.replace(/^One /, "one ")}` : verb;
     suggestedBtn.dataset.search = `${verb} ${pick.id}`.toLowerCase();
     suggestedRun = isCombine
-      ? () => runJob(`Combining ${paths.length} files`, () => invoke("run_combine", { actionId: pick.id, paths }), [paths[0]])
+      ? () => {
+          const all = [...paths]; // the files as they are now, even if the job waits in the queue
+          runJob(`Combining ${all.length} files`, (_, jobId) => invoke("run_combine", { actionId: pick.id, paths: all, jobId }), [all[0]]);
+        }
       : runAction(pick);
   }
 
@@ -196,7 +268,10 @@ async function renderActions() {
     const rows = combined
       .filter((a) => a !== pick)
       .map((a) =>
-        row(a.label, () => runJob(`${a.group}: ${a.label}`, () => invoke("run_combine", { actionId: a.id, paths }), [paths[0]]), {
+        row(a.label, () => {
+          const all = [...paths];
+          runJob(`${a.group}: ${a.label}`, (_, jobId) => invoke("run_combine", { actionId: a.id, paths: all, jobId }), [all[0]]);
+        }, {
           search: `${a.group} ${a.label}`,
         }),
       );
@@ -260,7 +335,7 @@ async function renderRecipes() {
       const edit = r.builtin
         ? null
         : el("button", { type: "button", className: "icon-btn edit", title: "Edit recipe", ariaLabel: "Edit recipe", onclick: () => openEditor(r) }, [icon("edit")]);
-      return row(r.name, () => runJob(r.name, (p) => invoke("run_recipe", { id: r.id, path: p })), {
+      return row(r.name, () => runJob(r.name, (p, jobId) => invoke("run_recipe", { id: r.id, path: p, jobId })), {
         hint: r.stepTitles.join(" · "),
         search: `recipe ${r.name}`,
         extra: edit,
@@ -289,7 +364,10 @@ function renderFileGrid() {
     tile("Terminal", "terminal", "Open a terminal here", () => quick("", () => invoke("open_terminal", { path: paths[0] }))),
     tile("Move to…", "move", "Move to another folder", () => quick(`Moved ${n}`, sendTo(false))),
     tile("Copy to…", "copyTo", "Copy to another folder", () => quick(`Copied ${n}`, sendTo(true))),
-    tile("Zip", "zip", "Make one .zip", () => runJob("Zipping", () => invoke("zip_items", { paths }), [paths[0]])),
+    tile("Zip", "zip", "Make one .zip", () => {
+      const all = [...paths];
+      runJob("Zipping", () => invoke("zip_items", { paths: all }), [all[0]]);
+    }),
     tile("To shelf", "shelfAdd", "Keep on a floating shelf (or shake while dragging)", () => quick(`${n} added to a shelf`, () => invoke("shelf_add", { id: null, paths }))),
   );
 }

@@ -12,6 +12,7 @@ mod doc_engine;
 mod docling_engine;
 mod ffmpeg_engine;
 mod image_engine;
+pub mod jobs;
 mod msoffice_engine;
 mod office_engine;
 mod pdf_engine;
@@ -159,6 +160,7 @@ pub fn run_chain(input: &Path, steps: &[String], progress: Progress) -> Result<P
     let result = (|| {
         for (i, step) in steps.iter().enumerate() {
             let report = |f: f32| progress((i as f32 + f) / n);
+            jobs::check()?;
             let out = run_action(step, &current, &report)?;
             report(1.0); // not every engine reports progress
             if i + 1 < steps.len() {

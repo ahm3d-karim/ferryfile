@@ -108,3 +108,5 @@ select.textbox option { background: var(--surface); }
 .editor-buttons .danger { margin-left: auto; color: var(--critical); }
 .error { margin: 0; color: var(--critical); font-size: 12px; }
 .error:empty { display: none; }
+#infobar.can-drag { cursor: grab; }
+#infobar.can-drag .msg::after { content: "Drag into any app"; display: block; font-size: 11px; line-height: 14px; color: var(--text-3); }
