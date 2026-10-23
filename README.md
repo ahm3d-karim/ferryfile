@@ -53,7 +53,7 @@ settings, and quit.
 | **Images** | PNG, JPG, WebP, GIF, BMP, TIFF | PNG, JPG, WebP, GIF, BMP, TIFF, PDF · resize 75/50/25% · compress | [image](https://crates.io/crates/image), PDFium |
 | **Audio** | MP3, M4A, AAC, WAV, FLAC, OGG, Opus, AIFF, WMA | MP3, M4A, WAV, FLAC, OGG, Opus | FFmpeg |
 | **Video** | MP4, M4V, MOV, MKV, WebM, AVI, WMV | MP4, MOV, MKV, WebM, GIF · extract MP3/M4A · resize 1080/720/480p · compress | FFmpeg |
-| **PDF** | PDF | PNG/JPG pages · text · Markdown · one PDF per page | PDFium |
+| **PDF** | PDF | **DOCX** · PNG/JPG pages · text · Markdown · one PDF per page · rotate left/right · reverse pages · drop first/last page · compress | PDFium + pandoc |
 | **Documents** | Markdown, TXT, DOCX, ODT, EPUB, HTML, RTF, RST, Org, LaTeX, Typst, Jupyter, PPTX | DOCX, ODT, Markdown, HTML, EPUB, RTF, text, **PDF** | pandoc + built-in Typst |
 | **Spreadsheets** | XLSX, XLSM, XLSB, XLS, ODS, CSV, TSV | CSV, Markdown, HTML, **PDF** · one CSV per sheet | [calamine](https://crates.io/crates/calamine) + built-in Typst |
 | **Combine** | several PDFs and/or images | one PDF, in drop order | PDFium |
@@ -62,6 +62,15 @@ settings, and quit.
 them with an embedded [Typst](https://typst.app) typesetter. If Microsoft
 Office or LibreOffice is installed, Ferryfile uses it instead for Office files, to
 keep their exact layout (see [Optional integrations](#optional-integrations)).
+
+**PDF → DOCX gives you editable text, not a copy of the page.** Ferryfile reads
+the PDF's text layer and rebuilds headings, paragraphs, lists, images and page
+breaks, then pandoc writes the Word file. Columns, tables, exact fonts and
+positions aren't kept, and charts come through as loose text. Scanned PDFs have
+no text layer, so they fail with "No text found". **Compress** only re-encodes
+images sharper than 150 DPI as JPEG. If that doesn't make the file smaller (a
+PDF that's mostly text, for example), it says so and writes nothing. Adding or
+removing passwords isn't offered: the PDFium bindings can't save encrypted files.
 
 ## Recipes
 
