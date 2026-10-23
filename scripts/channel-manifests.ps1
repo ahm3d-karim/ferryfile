@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 
 $repo = 'ahm3d-karim/ferryfile'
 $id = 'Ferryfile.Ferryfile'
-$schema = '1.10.0'
+$schema = '1.12.0'
 $version = $Tag.TrimStart('v')
 $root = Split-Path -Parent $PSScriptRoot
 $base = "https://github.com/$repo/releases/download/$Tag"

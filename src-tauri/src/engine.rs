@@ -12,10 +12,14 @@ mod doc_engine;
 mod docling_engine;
 mod ffmpeg_engine;
 mod image_engine;
+mod image_meta;
 pub mod jobs;
 mod msoffice_engine;
 mod office_engine;
+mod pdf_docx;
 mod pdf_engine;
+mod pdf_layout;
+mod pdf_tools;
 mod typeset;
 
 /// Reports progress of a running action as a fraction in `0.0..=1.0`.
