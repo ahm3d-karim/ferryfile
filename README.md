@@ -50,7 +50,7 @@ settings, and quit.
 
 | Category | From | To / actions | Powered by |
 | --- | --- | --- | --- |
-| **Images** | PNG, JPG, WebP, GIF, BMP, TIFF | PNG, JPG, WebP, GIF, BMP, TIFF, PDF · resize 75/50/25% · compress | [image](https://crates.io/crates/image), PDFium |
+| **Images** | PNG, JPG, WebP, GIF, BMP, TIFF, **HEIC, HEIF, AVIF** | PNG, JPG, WebP, GIF, BMP, TIFF, PDF · resize 75/50/25% · compress · **remove location & camera info** | [image](https://crates.io/crates/image), FFmpeg (HEIC/AVIF), PDFium |
 | **Audio** | MP3, M4A, AAC, WAV, FLAC, OGG, Opus, AIFF, WMA | MP3, M4A, WAV, FLAC, OGG, Opus | FFmpeg |
 | **Video** | MP4, M4V, MOV, MKV, WebM, AVI, WMV | MP4, MOV, MKV, WebM, GIF · extract MP3/M4A · resize 1080/720/480p · compress | FFmpeg |
 | **PDF** | PDF | **DOCX** · PNG/JPG pages · text · Markdown · one PDF per page · rotate left/right · reverse pages · drop first/last page · compress | PDFium + pandoc |
@@ -71,6 +71,16 @@ no text layer, so they fail with "No text found". **Compress** only re-encodes
 images sharper than 150 DPI as JPEG. If that doesn't make the file smaller (a
 PDF that's mostly text, for example), it says so and writes nothing. Adding or
 removing passwords isn't offered: the PDFium bindings can't save encrypted files.
+
+**Removing location & camera info** drops EXIF/GPS data. JPG, PNG and WebP are
+rewritten losslessly without re-encoding; HEIC and AVIF photos come out as a
+high-quality JPG.
+
+**Cancel and notifications.** A running conversion can be cancelled from the
+drawer or shelf: video and audio jobs stop at once and the partial file is
+deleted, and a recipe stops before its next step. Ferryfile shows a Windows
+notification when a job finishes while you're in another window. Finished
+files can be dragged straight out of the drawer into any app.
 
 ## Recipes
 
