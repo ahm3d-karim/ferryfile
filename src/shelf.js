@@ -133,7 +133,7 @@ function render() {
 
 // ---------------------------------------------------------------- actions
 
-let running = null; // { index, count }
+let running = null; // { index, count, jobId, cancelled }
 
 listen("ferryfile-progress", (e) => {
   if (!running) return;
@@ -141,13 +141,22 @@ listen("ferryfile-progress", (e) => {
   progressEl.value = (running.index + e.payload.fraction) / running.count;
 });
 
+$("info-cancel").addEventListener("click", () => {
+  if (!running) return;
+  running.cancelled = true;
+  if (running.jobId) invoke("cancel_job", { jobId: running.jobId });
+  setStatus("Cancelling…", "busy");
+});
+
 /**
- * Runs `job(path)` for each target and puts every output on this shelf, so
- * results are ready to drag out. Items an action doesn't apply to are skipped.
+ * Runs `job(path, jobId)` for each target and puts every output on this
+ * shelf, so results are ready to drag out. Items an action doesn't apply to
+ * are skipped; Cancel stops the current item and the rest.
  */
 async function runOnShelf(label, job, targets = items) {
   if (running) return;
   setStatus(`${label}…`, "busy");
+  $("info-cancel").hidden = false;
   panel.classList.add("disabled");
   progressEl.value = 0;
   progressEl.hidden = false;
@@ -155,10 +164,12 @@ async function runOnShelf(label, job, targets = items) {
   let skipped = 0;
   try {
     for (const [index, p] of targets.entries()) {
-      running = { index, count: targets.length };
+      if (running?.cancelled) break;
+      running = { index, count: targets.length, jobId: crypto.randomUUID(), cancelled: running?.cancelled ?? false };
       try {
-        outputs.push(await job(p));
+        outputs.push(await job(p, running.jobId));
       } catch (err) {
+        if (String(err) === "Cancelled") break;
         if (/No engine can run|can't run on/.test(String(err))) skipped++;
         else {
           setStatus(`${basename(p)}: ${err}`, "error");
@@ -168,9 +179,11 @@ async function runOnShelf(label, job, targets = items) {
     }
     if (outputs.length) await invoke("shelf_add", { id, paths: outputs });
     const note = skipped ? ` (${skipped} skipped: not supported)` : "";
-    setStatus(outputs.length ? `Added ${outputs.length} result${outputs.length > 1 ? "s" : ""} to the shelf${note}` : `Nothing to do${note}`, outputs.length ? "ok" : "");
+    if (running?.cancelled) setStatus(outputs.length ? `Cancelled; ${outputs.length} finished and added` : "Cancelled", "");
+    else setStatus(outputs.length ? `Added ${outputs.length} result${outputs.length > 1 ? "s" : ""} to the shelf${note}` : `Nothing to do${note}`, outputs.length ? "ok" : "");
   } finally {
     running = null;
+    $("info-cancel").hidden = true;
     progressEl.hidden = true;
     panel.classList.remove("disabled");
   }
@@ -212,17 +225,17 @@ async function renderActions() {
     section(
       "Combine",
       combined.map((a) =>
-        chip(a.label, () => runOnShelf(`${a.group}: ${a.label}`, () => invoke("run_combine", { actionId: a.id, paths: snapshot }), [first]), `All ${n} items, in shelf order`),
+        chip(a.label, () => runOnShelf(`${a.group}: ${a.label}`, (_, jobId) => invoke("run_combine", { actionId: a.id, paths: snapshot, jobId }), [first]), `All ${n} items, in shelf order`),
       ),
     ),
     section(
       "Recipes",
-      recipes.map((r) => chip(r.name, () => runOnShelf(r.name, (p) => invoke("run_recipe", { id: r.id, path: p })), r.stepTitles.join(" → "))),
+      recipes.map((r) => chip(r.name, () => runOnShelf(r.name, (p, jobId) => invoke("run_recipe", { id: r.id, path: p, jobId })), r.stepTitles.join(" → "))),
     ),
     ...[...groups].map(([name, acts]) =>
       section(
         name,
-        acts.map((a) => chip(a.label, () => runOnShelf(`${a.group}: ${a.label}`, (p) => invoke("run_action", { actionId: a.id, path: p })))),
+        acts.map((a) => chip(a.label, () => runOnShelf(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId })))),
       ),
     ),
     section("Files", [

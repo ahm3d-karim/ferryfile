@@ -35,14 +35,45 @@
       </div>
       <div class="card">
         <span class="card-icon" data-icon="drop"></span>
-        <label class="card-text" for="delay">
+        <label class="card-text" for="open-on">
           <span class="card-title">Open the drawer</span>
+          <span class="card-desc" id="open-desc"></span>
+        </label>
+        <select id="open-on" class="combo">
+          <option value="hotkey">When I press my drag hotkey</option>
+          <option value="drag">Whenever I drag a file</option>
+        </select>
+      </div>
+      <div class="card sub" id="delay-card">
+        <label class="card-text" for="delay">
+          <span class="card-title">When dragging</span>
           <span class="card-desc">A short pause means fewer accidental opens</span>
         </label>
         <select id="delay" class="combo">
           <option value="0">Right away</option>
           <option value="400">After a short pause</option>
         </select>
+      </div>
+      <div class="card sub" id="drag-hotkey-card">
+        <span class="card-text">
+          <span class="card-title">Drag hotkey</span>
+          <span class="card-desc">Only works while you're dragging a file. Other times the key types as usual.</span>
+        </span>
+        <span class="hotkey-wrap">
+          <button type="button" id="drag-hotkey" class="btn hotkey"></button>
+          <button type="button" id="drag-hotkey-reset" class="btn small">Reset</button>
+        </span>
+      </div>
+      <div class="card">
+        <span class="card-icon" data-icon="app"></span>
+        <span class="card-text">
+          <span class="card-title">Drawer hotkey</span>
+          <span class="card-desc" id="hotkey-desc">Opens or closes the drawer any time</span>
+        </span>
+        <span class="hotkey-wrap">
+          <button type="button" id="hotkey" class="btn hotkey"></button>
+          <button type="button" id="hotkey-reset" class="btn small">Reset</button>
+        </span>
       </div>
 
       <h2>Shelves</h2>

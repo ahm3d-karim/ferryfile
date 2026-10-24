@@ -22,6 +22,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-drag = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
 pdfium-render = "0.9"
 calamine = { version = "0.36", features = ["dates"] }
 typst = "0.15"
@@ -29,6 +30,7 @@ typst-pdf = "0.15"
 typst-layout = "0.15"
 typst-kit = { version = "0.15", default-features = false, features = ["embedded-fonts", "scan-fonts", "system-files"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "tiff"] }
+tauri-plugin-global-shortcut = "2"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
@@ -40,6 +42,7 @@ features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
   "Win32_System_LibraryLoader",
+  "Win32_UI_Input_KeyboardAndMouse",
 ]
 
 [dev-dependencies]

@@ -165,6 +165,7 @@ pub async fn run_recipe(
     window: tauri::WebviewWindow,
     id: String,
     path: String,
+    job_id: Option<String>,
 ) -> Result<String, String> {
     let label = window.label().to_string();
     let recipe = all(&app)
@@ -172,6 +173,7 @@ pub async fn run_recipe(
         .find(|r| r.id == id)
         .ok_or("That recipe no longer exists")?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _job = crate::engine::jobs::begin(job_id.as_deref());
         let report = |f: f32| crate::emit_progress(&app, &label, &path, f);
         engine::run_chain(Path::new(&path), &recipe.steps, &report)
             .map(|p| p.to_string_lossy().into_owned())

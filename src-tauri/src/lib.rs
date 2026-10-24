@@ -2,6 +2,7 @@ mod drag;
 mod dropbridge;
 mod engine;
 mod files;
+mod hotkey;
 mod recipes;
 mod settings;
 mod shake;
@@ -39,9 +40,11 @@ async fn run_action(
     window: tauri::WebviewWindow,
     action_id: String,
     path: String,
+    job_id: Option<String>,
 ) -> Result<String, String> {
     let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
+        let _job = engine::jobs::begin(job_id.as_deref());
         let report = |f: f32| emit_progress(&app, &label, &path, f);
         engine::run_action(&action_id, std::path::Path::new(&path), &report)
             .map(|p| p.to_string_lossy().into_owned())
@@ -62,9 +65,11 @@ async fn run_combine(
     window: tauri::WebviewWindow,
     action_id: String,
     paths: Vec<String>,
+    job_id: Option<String>,
 ) -> Result<String, String> {
     let label = window.label().to_string();
     tauri::async_runtime::spawn_blocking(move || {
+        let _job = engine::jobs::begin(job_id.as_deref());
         let first = paths.first().cloned().unwrap_or_default();
         let report = |f: f32| emit_progress(&app, &label, &first, f);
         let inputs: Vec<_> = paths.iter().map(std::path::PathBuf::from).collect();
@@ -72,6 +77,19 @@ async fn run_combine(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Stops a running job started with this `job_id`.
+#[tauri::command]
+fn cancel_job(job_id: String) -> bool {
+    engine::jobs::cancel(&job_id)
+}
+
+/// A Windows notification, for jobs that finish while you're elsewhere.
+#[tauri::command]
+fn notify(app: tauri::AppHandle, title: String, body: String) {
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 /// Keep the drawer open (cancels the pending auto-hide after a drag ends).
@@ -107,11 +125,14 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_drag::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(hotkey::plugin())
         .invoke_handler(tauri::generate_handler![
             settings::get_settings,
             settings::set_settings,
             settings::pick_output_dir,
             settings::open_settings,
+            hotkey::pause_hotkey,
             files::copy_paths,
             files::copy_files,
             files::reveal,
@@ -133,6 +154,8 @@ pub fn run() {
             run_action,
             combine_actions,
             run_combine,
+            cancel_job,
+            notify,
             pin_drawer,
             focus_drawer,
             hide_drawer,
@@ -153,7 +176,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show_shelves, &new_shelf, &open_settings, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Ferryfile — drag a file from Explorer")
+                .tooltip("Ferryfile")
                 .menu(&menu)
                 .on_menu_event(|app, ev| match ev.id.as_ref() {
                     // Creating windows in a menu handler deadlocks on Windows; hop threads.
