@@ -57,12 +57,14 @@ settings, and quit.
 
 | Category | From | To / actions | Powered by |
 | --- | --- | --- | --- |
-| **Images** | PNG, JPG, WebP, GIF, BMP, TIFF, **HEIC, HEIF, AVIF** | PNG, JPG, WebP, GIF, BMP, TIFF, PDF · resize 75/50/25% · compress · **remove location & camera info** | [image](https://crates.io/crates/image), FFmpeg (HEIC/AVIF), PDFium |
+| **Images** | PNG, JPG, WebP, GIF, BMP, TIFF, HEIC, HEIF, AVIF, **SVG** | PNG, JPG, WebP, GIF, BMP, TIFF, PDF · resize 75/50/25% · compress · **shrink to 1 MB / 500 KB / 200 KB** · remove location & camera info | [image](https://crates.io/crates/image), [resvg](https://crates.io/crates/resvg) (SVG), FFmpeg (HEIC/AVIF), PDFium |
 | **Audio** | MP3, M4A, AAC, WAV, FLAC, OGG, Opus, AIFF, WMA | MP3, M4A, WAV, FLAC, OGG, Opus | FFmpeg |
-| **Video** | MP4, M4V, MOV, MKV, WebM, AVI, WMV | MP4, MOV, MKV, WebM, GIF · extract MP3/M4A · resize 1080/720/480p · compress | FFmpeg |
+| **Video** | MP4, M4V, MOV, MKV, WebM, AVI, WMV | MP4, MOV, MKV, WebM, GIF · extract MP3/M4A · **extract subtitles (SRT)** · resize 1080/720/480p · compress · **shrink to 10 / 25 / 50 MB** | FFmpeg |
 | **PDF** | PDF | **DOCX** · PNG/JPG pages · text · Markdown · one PDF per page · rotate left/right · reverse pages · drop first/last page · compress | PDFium + pandoc |
 | **Documents** | Markdown, TXT, DOCX, ODT, EPUB, HTML, RTF, RST, Org, LaTeX, Typst, Jupyter, PPTX | DOCX, ODT, Markdown, HTML, EPUB, RTF, text, **PDF** | pandoc + built-in Typst |
 | **Spreadsheets** | XLSX, XLSM, XLSB, XLS, ODS, CSV, TSV | CSV, Markdown, HTML, **PDF** · one CSV per sheet | [calamine](https://crates.io/crates/calamine) + built-in Typst |
+| **Subtitles** | SRT, WebVTT | SRT ↔ VTT, plain text | built in |
+| **Archives** | ZIP, 7z, TAR, TAR.GZ/TGZ, GZ, RAR | extract here | [zip](https://crates.io/crates/zip), [sevenz-rust2](https://crates.io/crates/sevenz-rust2), [tar](https://crates.io/crates/tar); RAR via 7-Zip or Windows |
 | **Combine** | several PDFs and/or images | one PDF, in drop order | PDFium |
 
 **PDFs from documents and spreadsheets need no Office suite.** Ferryfile writes
@@ -83,6 +85,33 @@ removing passwords isn't offered: the PDFium bindings can't save encrypted files
 rewritten losslessly without re-encoding; HEIC and AVIF photos come out as a
 high-quality JPG.
 
+**SVG** turns into a vector PDF (sharp at any zoom, text stays text) through
+the built-in Typst typesetter. As PNG, JPG and the other image formats, small
+drawings such as icons are scaled up so the longest side is 1024 px.
+Transparent images saved as JPG get a white background.
+
+**Shrink to** picks the best quality that fits under the size. Photos come out
+as JPG: the highest quality that fits, and only if that's not enough, a
+smaller picture. Videos come out as MP4 at a bitrate worked out from their
+length, at a lower resolution when the budget is tight; Ferryfile checks the
+result and tries again lower if the encoder overshot. A file that's already
+under the size is left alone, and Ferryfile says so. Sizes are decimal
+(10 MB = 10,000,000 bytes), so they also fit limits measured in MiB.
+
+**Subtitles** convert between SRT and WebVTT, keeping italics, bold and
+underline. *Plain text* keeps just the words, writing lines that rolling
+auto-captions repeat only once. Old Windows-encoded SRT files and UTF-16
+files are read correctly; output is always UTF-8. *Extract subtitles* takes
+the first subtitle track of a video; picture-based subtitles (DVD, Blu-ray)
+can't become text.
+
+**Extract here** unpacks next to the archive. An archive with one top-level
+item (usually a folder) gives you that item directly; anything else lands in a
+folder named after the archive. Entries that would land outside that folder
+are skipped. RAR archives use 7-Zip when it's installed, else the `tar` that
+comes with Windows (Windows 11 reads RAR); password-protected archives aren't
+supported yet.
+
 **Cancel and notifications.** A running conversion can be cancelled from the
 drawer or shelf: video and audio jobs stop at once and the partial file is
 deleted, and a recipe stops before its next step. Ferryfile shows a Windows
@@ -96,7 +125,7 @@ A recipe is a saved chain of actions that runs in one click, for example
 final file is kept.
 
 - **Built in:** Web-ready image, Email-friendly photo, Share-size clip,
-  Clip to GIF, Podcast MP3.
+  Clip to GIF, Podcast MP3, Clip under 10 MB.
 - **Your own:** click **+ New** in the drawer, name it, and add steps. The
   editor only offers steps that make sense for the format so far.
 - The drawer only shows recipes that fit the file you dropped. Use the search
@@ -221,6 +250,7 @@ installed. Nothing is bundled or required.
 | --- | --- | --- |
 | Microsoft Office | Highest-fidelity PDF from Word, Excel and PowerPoint files | Office desktop apps |
 | LibreOffice | PDF and cross-format Office conversions | [libreoffice.org](https://www.libreoffice.org) |
+| 7-Zip | RAR archives on any Windows, and 7z archives the built-in reader can't open (encrypted, BCJ2) | [7-zip.org](https://www.7-zip.org) |
 | [Docling](https://github.com/docling-project/docling) | Layout-aware Markdown from PDFs, Office files and scans (tables, OCR) | `pip install docling` |
 
 When several can make a PDF, Ferryfile picks in this order: **Microsoft Office →

@@ -143,12 +143,13 @@ pub struct FileInfo {
 
 fn kind_of(ext: &str) -> &'static str {
     match ext {
-        "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "tif" | "tiff" | "heic" | "avif" | "svg" => "image",
+        "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "tif" | "tiff" | "heic" | "heif" | "avif" | "svg" => "image",
         "mp3" | "m4a" | "aac" | "wav" | "flac" | "ogg" | "opus" | "aiff" | "aif" | "wma" => "audio",
         "mp4" | "m4v" | "mov" | "mkv" | "webm" | "avi" | "wmv" => "video",
         "xlsx" | "xlsm" | "xlsb" | "xls" | "ods" | "csv" | "tsv" => "spreadsheet",
         "pptx" | "ppt" | "odp" => "presentation",
-        "zip" | "7z" | "rar" | "tar" | "gz" => "archive",
+        "zip" | "7z" | "rar" | "tar" | "gz" | "tgz" => "archive",
+        "srt" | "vtt" => "subtitles",
         _ => "document",
     }
 }

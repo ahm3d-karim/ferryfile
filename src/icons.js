@@ -62,13 +62,13 @@ export function hydrateIcons(root = document) {
 }
 
 const KINDS = [
-  ["image", ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "avif", "svg"]],
+  ["image", ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif", "avif", "svg"]],
   ["audio", ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff", "aif", "wma"]],
   ["video", ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv"]],
   ["pdf", ["pdf"]],
   ["sheet", ["xlsx", "xlsm", "xlsb", "xls", "ods", "csv", "tsv"]],
-  ["archive", ["zip", "7z", "rar", "tar", "gz"]],
-  ["document", ["doc", "docx", "odt", "rtf", "md", "markdown", "txt", "html", "htm", "epub", "pptx", "ppt", "odp", "tex", "typ", "ipynb", "rst", "org"]],
+  ["archive", ["zip", "7z", "rar", "tar", "gz", "tgz"]],
+  ["document", ["doc", "docx", "odt", "rtf", "md", "markdown", "txt", "html", "htm", "epub", "pptx", "ppt", "odp", "tex", "typ", "ipynb", "rst", "org", "srt", "vtt"]],
 ];
 
 /** Icon name for a path, by extension ("folder" when it has none). */
