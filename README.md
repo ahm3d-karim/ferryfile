@@ -35,9 +35,16 @@ Images, audio, video, PDFs, documents and spreadsheets, all on your machine.
 ## How it works
 
 1. **Start dragging** any file in Explorer or on the desktop.
-2. A **drawer slides in** from the edge of the screen.
+2. While still dragging, **press your drag hotkey** (`Space` by default) and a
+   **drawer slides in** from the edge of the screen. The drag hotkey only
+   does anything mid-drag; the rest of the time the key types as usual.
+   Prefer the drawer on every drag? Switch **Settings → Open the drawer** to
+   *Whenever I drag a file*.
 3. **Drop the file** on it, and pick an action: a conversion, a saved recipe,
    or a file action.
+
+The separate **drawer hotkey** (`Ctrl+Alt+Space` by default) opens or closes
+the drawer at any time, no drag needed.
 
 The new file is saved next to the original (or in a folder you choose). Ferryfile
 **never overwrites** anything; a clash gets a name like `photo (2).webp`.
@@ -130,7 +137,9 @@ Open **Settings…** from the tray menu or the ⚙ button in the drawer.
 | --- | --- |
 | Start with Windows | On / off |
 | Drawer edge | Right / left |
-| Open the drawer | As soon as you drag, or after a short pause (fewer accidental opens) |
+| Open the drawer | When you press the drag hotkey mid-drag, or whenever you drag a file (right away or after a short pause) |
+| Drag hotkey | Any key or combo; only caught while you're dragging. Default `Space` |
+| Drawer hotkey | Any combo with Ctrl, Alt, Shift or Win (or a lone F-key); opens or closes the drawer any time. Default `Ctrl+Alt+Space` |
 | Shelves | Shake while dragging to open a shelf on/off, and how firm a shake it takes |
 | Save converted files | Next to the original, or in a folder you choose |
 

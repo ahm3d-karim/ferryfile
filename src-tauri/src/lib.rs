@@ -2,6 +2,7 @@ mod drag;
 mod dropbridge;
 mod engine;
 mod files;
+mod hotkey;
 mod recipes;
 mod settings;
 mod shake;
@@ -125,11 +126,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(hotkey::plugin())
         .invoke_handler(tauri::generate_handler![
             settings::get_settings,
             settings::set_settings,
             settings::pick_output_dir,
             settings::open_settings,
+            hotkey::pause_hotkey,
             files::copy_paths,
             files::copy_files,
             files::reveal,
@@ -173,7 +176,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show_shelves, &new_shelf, &open_settings, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Ferryfile — drag a file from Explorer")
+                .tooltip("Ferryfile")
                 .menu(&menu)
                 .on_menu_event(|app, ev| match ev.id.as_ref() {
                     // Creating windows in a menu handler deadlocks on Windows; hop threads.

@@ -19,9 +19,32 @@ pub enum Side {
     Left,
 }
 
+/// What makes the drawer slide in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum OpenOn {
+    /// Only when the user presses the drag hotkey mid-drag (or the drawer
+    /// hotkey at any time).
+    #[default]
+    Hotkey,
+    /// As soon as a file drag starts in Explorer.
+    Drag,
+}
+
+/// Default drawer hotkey (works any time, so it needs modifiers).
+pub const DEFAULT_HOTKEY: &str = "Ctrl+Alt+Space";
+/// Default drag hotkey. Only caught mid-drag, so a single key is safe.
+pub const DEFAULT_DRAG_HOTKEY: &str = "Space";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    pub open_on: OpenOn,
+    /// Pressed while dragging a file, opens the drawer. Ignored (and passed
+    /// through) when not dragging. Empty = none.
+    pub drag_hotkey: String,
+    /// Global shortcut that shows or hides the drawer any time. Empty = none.
+    pub hotkey: String,
     /// Screen edge the drawer slides in from.
     pub drawer_side: Side,
     /// Wait this long into a drag before showing the drawer, so quick drags
@@ -37,6 +60,9 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            open_on: OpenOn::Hotkey,
+            drag_hotkey: DEFAULT_DRAG_HOTKEY.into(),
+            hotkey: DEFAULT_HOTKEY.into(),
             drawer_side: Side::Right,
             open_delay_ms: 0,
             output_dir: None,
@@ -55,6 +81,11 @@ pub fn current() -> Settings {
 fn apply(settings: Settings) {
     crate::engine::set_output_dir(settings.output_dir.as_deref().map(PathBuf::from));
     crate::drag::configure_shake(settings.shake_to_shelf, settings.shake_sensitivity);
+    // The drag hotkey only matters when the drawer waits for it.
+    let drag_key = (settings.open_on == OpenOn::Hotkey).then_some(settings.drag_hotkey.as_str());
+    if crate::drag::configure_drag_key(drag_key).is_err() {
+        let _ = crate::drag::configure_drag_key(Some(DEFAULT_DRAG_HOTKEY));
+    }
     *SETTINGS.write().unwrap() = Some(settings);
 }
 
@@ -63,10 +94,12 @@ fn store_path(app: &AppHandle) -> Option<PathBuf> {
 }
 
 pub fn load(app: &AppHandle) {
-    let settings = store_path(app)
+    let settings: Settings = store_path(app)
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
+    // A taken hotkey isn't fatal; Settings shows it as not working.
+    let _ = crate::hotkey::register(app, &settings.hotkey);
     apply(settings);
 }
 
@@ -76,6 +109,8 @@ pub struct SettingsView {
     #[serde(flatten)]
     settings: Settings,
     autostart: bool,
+    /// False when the hotkey couldn't be registered (another app owns it).
+    hotkey_active: bool,
     version: String,
     config_dir: String,
 }
@@ -85,6 +120,7 @@ pub fn get_settings(app: AppHandle) -> SettingsView {
     SettingsView {
         settings: current(),
         autostart: app.autolaunch().is_enabled().unwrap_or(false),
+        hotkey_active: crate::hotkey::is_active(&app),
         version: app.package_info().version.to_string(),
         config_dir: app
             .path()
@@ -100,6 +136,15 @@ pub fn set_settings(app: AppHandle, settings: Settings, autostart: bool) -> Resu
     if autostart != launcher.is_enabled().unwrap_or(false) {
         let result = if autostart { launcher.enable() } else { launcher.disable() };
         result.map_err(|e| format!("Couldn't change startup setting: {e}"))?;
+    }
+    if !settings.drag_hotkey.trim().is_empty() {
+        crate::drag::parse_combo(&settings.drag_hotkey)?;
+    }
+    if settings.hotkey != current().hotkey {
+        if let Err(e) = crate::hotkey::register(&app, &settings.hotkey) {
+            let _ = crate::hotkey::register(&app, &current().hotkey);
+            return Err(e);
+        }
     }
     let path = store_path(&app).ok_or("No config folder")?;
     if let Some(dir) = path.parent() {

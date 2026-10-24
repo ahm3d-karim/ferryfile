@@ -43,3 +43,8 @@ h2 { margin: 16px 0 6px; font-size: 14px; line-height: 20px; font-weight: 600; }
 #status.error { color: var(--critical); }
 footer { margin-top: auto; padding-top: 12px; display: flex; align-items: center; gap: 12px; }
 #about { flex: 1; font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.hotkey-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.btn.hotkey { min-width: 140px; font-family: inherit; font-variant-numeric: tabular-nums; }
+.btn.hotkey.recording { border-color: var(--accent); color: var(--accent); }
+.card-desc.warn { color: #d97706; }
