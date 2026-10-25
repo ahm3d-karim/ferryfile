@@ -169,6 +169,7 @@ impl Engine for PdfEngine {
     fn output_ext(&self, action_id: &str, _input: &Path) -> Option<String> {
         match action_id.split_once(':')? {
             ("pages" | "split", _) => Some(FOLDER_EXT.into()),
+            ("extract", _) => Some("pdf".into()),
             ("text", fmt) => Some(fmt.to_string()),
             ("convert", "pdf") | ("rotate" | "reorder" | "drop" | "compress", _) => Some("pdf".into()),
             ("convert", "docx") => Some("docx".into()),
@@ -180,7 +181,9 @@ impl Engine for PdfEngine {
         match action_id.split_once(':').ok_or("bad action id")? {
             ("pages", fmt) => render_pages(input, fmt, progress),
             ("text", fmt) => extract_text(input, fmt),
-            ("split", _) => split_pages(input, progress),
+            ("split", "pages") => split_pages(input, progress),
+            ("split", spec) => pdf_tools::split_ranges(input, spec, progress),
+            ("extract", spec) => pdf_tools::extract_pages(input, spec, progress),
             ("convert", "docx") => pdf_to_docx(input, progress),
             ("rotate", "right") => pdf_tools::rotate(input, 1, progress),
             ("rotate", "left") => pdf_tools::rotate(input, -1, progress),
@@ -193,6 +196,25 @@ impl Engine for PdfEngine {
                 Ok(out)
             }
             (kind, _) => Err(format!("Unknown action kind '{kind}'")),
+        }
+    }
+
+    /// `extract:1-3,5` (one PDF of those pages) and `split:1-3,5,8-` (one
+    /// PDF per range), from the Split pages view or a recipe step.
+    fn parse_action(&self, action_id: &str, path: &Path) -> Option<Action> {
+        if ext_of(path) != "pdf" {
+            return None;
+        }
+        let (kind, spec) = action_id.split_once(':')?;
+        // Only the canonical form, so equal steps have equal ids.
+        if super::ranges::canonical(spec).ok()? != spec {
+            return None;
+        }
+        let pages = super::ranges::label(spec).ok()?;
+        match kind {
+            "extract" => Some(Action::new(action_id, &format!("pages {pages}"), "Extract")),
+            "split" => Some(Action::new(action_id, &format!("by pages {pages}"), "Split")),
+            _ => None,
         }
     }
 

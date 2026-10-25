@@ -13,14 +13,17 @@ mod doc_engine;
 mod docling_engine;
 mod ffmpeg_engine;
 mod image_engine;
+pub(crate) mod image_crop;
 mod image_meta;
+pub(crate) mod media_edit;
 pub mod jobs;
 mod msoffice_engine;
 mod office_engine;
 mod pdf_docx;
 mod pdf_engine;
 mod pdf_layout;
-mod pdf_tools;
+pub(crate) mod pdf_tools;
+pub(crate) mod ranges;
 mod subtitle_engine;
 mod typeset;
 
@@ -56,6 +59,13 @@ pub trait Engine: Send + Sync {
     /// Extension of the file `action_id` produces from `input`.
     fn output_ext(&self, action_id: &str, input: &Path) -> Option<String>;
     fn run(&self, action_id: &str, input: &Path, progress: Progress) -> Result<PathBuf, String>;
+
+    /// Actions whose id carries values set in an editing view, e.g.
+    /// `trim:1.5-10` or `crop:0,0,640,480`, so `actions` can't list them.
+    /// Returns the action when `action_id` is valid for `path`.
+    fn parse_action(&self, _action_id: &str, _path: &Path) -> Option<Action> {
+        None
+    }
 
     /// Actions that take several files at once and produce one output.
     fn combine_actions(&self, _inputs: &[PathBuf]) -> Vec<Action> {
@@ -119,7 +129,11 @@ pub fn run_combine(action_id: &str, inputs: &[PathBuf], progress: Progress) -> R
 /// The engine offering `action_id` for `input`, plus the action itself.
 fn find(action_id: &str, input: &Path) -> Option<(Box<dyn Engine>, Action)> {
     engines().into_iter().find_map(|e| {
-        let action = e.actions(input).into_iter().find(|a| a.id == action_id)?;
+        let action = e
+            .actions(input)
+            .into_iter()
+            .find(|a| a.id == action_id)
+            .or_else(|| e.parse_action(action_id, input))?;
         Some((e, action))
     })
 }

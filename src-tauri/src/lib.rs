@@ -1,5 +1,6 @@
 mod drag;
 mod dropbridge;
+mod editing;
 mod engine;
 mod files;
 mod hotkey;
@@ -164,6 +165,11 @@ pub fn run() {
             recipes::save_recipe,
             recipes::delete_recipe,
             recipes::run_recipe,
+            editing::media_source,
+            editing::media_preview,
+            editing::crop_source,
+            editing::pdf_ranges,
+            editing::merge_plan,
         ])
         .setup(|app| {
             settings::load(app.handle());
