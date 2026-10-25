@@ -503,6 +503,7 @@ function applySearch() {
 /** Opens an editing view in place of the action list. */
 function showTool(id) {
   closeEditor();
+  closeCustom();
   toolsEl.hidden = true;
   openTool(id, {
     paths: [...paths],
