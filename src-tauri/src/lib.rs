@@ -1,12 +1,19 @@
+pub mod cli;
 mod drag;
 mod dropbridge;
+mod editing;
 mod engine;
+mod explorer;
 mod files;
+mod content;
 mod hotkey;
 mod recipes;
 mod settings;
 mod shake;
 mod shelf;
+mod tutorial;
+mod watch;
+mod suggest;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -46,11 +53,50 @@ async fn run_action(
     tauri::async_runtime::spawn_blocking(move || {
         let _job = engine::jobs::begin(job_id.as_deref());
         let report = |f: f32| emit_progress(&app, &label, &path, f);
-        engine::run_action(&action_id, std::path::Path::new(&path), &report)
-            .map(|p| p.to_string_lossy().into_owned())
+        let input = std::path::Path::new(&path);
+        let out = engine::run_action(&action_id, input, &report)?;
+        // Name it by the user's pattern first, so a suggestion records the final file.
+        let out = engine::naming::finish(input, out, true).map(|p| p.to_string_lossy().into_owned())?;
+        suggest::record(&app, &path, std::slice::from_ref(&action_id), &out);
+        Ok(out)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// "Custom…" entries the drawer can show for this file's groups.
+#[tauri::command]
+fn custom_forms(path: String) -> Vec<engine::params::CustomForm> {
+    engine::custom_forms(std::path::Path::new(&path))
+}
+
+/// How many files of a batch to run at once through `steps` (one action or a recipe's steps).
+#[tauri::command]
+fn batch_limit(path: String, steps: Vec<String>) -> usize {
+    engine::parallel_limit(std::path::Path::new(&path), &steps)
+}
+
+/// Reads the text in an image (OCR) or PDF and puts it on the clipboard.
+#[tauri::command]
+async fn copy_text(path: String) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = engine::recognized_text(std::path::Path::new(&path))?;
+        let crlf = text.lines().collect::<Vec<_>>().join("\r\n");
+        clipboard_win::set_clipboard_string(&crlf).map_err(|e| e.to_string())?;
+        Ok(text.split_whitespace().count())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Opens Windows' language settings, where OCR languages are added.
+#[tauri::command]
+fn open_language_settings() -> Result<(), String> {
+    std::process::Command::new("explorer.exe")
+        .arg("ms-settings:regionlanguage")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -73,7 +119,8 @@ async fn run_combine(
         let first = paths.first().cloned().unwrap_or_default();
         let report = |f: f32| emit_progress(&app, &label, &first, f);
         let inputs: Vec<_> = paths.iter().map(std::path::PathBuf::from).collect();
-        engine::run_combine(&action_id, &inputs, &report).map(|p| p.to_string_lossy().into_owned())
+        let out = engine::run_combine(&action_id, &inputs, &report)?;
+        engine::naming::finish(&inputs[0], out, false).map(|p| p.to_string_lossy().into_owned())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -114,10 +161,19 @@ fn hide_drawer(app: tauri::AppHandle) {
 }
 
 pub fn run() {
+    // Started from the right-click menu or Send to: queue those files now, so
+    // other launches forwarded during startup land in the same drop.
+    let opened = explorer::queue(explorer::paths_from_args(&std::env::args().collect::<Vec<_>>()));
     tauri::Builder::default()
-        // Must come first: a second launch just opens settings in the running app.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            settings::open_settings(app.clone());
+        // Must come first: a second launch hands its files (from Explorer's
+        // right-click menu or Send to) to the running app, or opens settings.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let opened = explorer::paths_from_args(&args);
+            if opened.is_empty() {
+                settings::open_settings(app.clone());
+            } else {
+                explorer::receive(app, opened);
+            }
         }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -131,6 +187,7 @@ pub fn run() {
             settings::get_settings,
             settings::set_settings,
             settings::pick_output_dir,
+            settings::preview_names,
             settings::open_settings,
             hotkey::pause_hotkey,
             files::copy_paths,
@@ -142,6 +199,11 @@ pub fn run() {
             files::file_info,
             shelf::shelf_state,
             shelf::shelf_add,
+            shelf::shelf_add_text,
+            shelf::shelf_add_url,
+            shelf::shelf_add_bytes,
+            shelf::shelf_paste,
+            shelf::shelf_focus,
             shelf::shelf_remove,
             shelf::shelf_replace,
             shelf::shelf_set_pinned,
@@ -151,7 +213,9 @@ pub fn run() {
             shelf::toggle_shelves,
             shelf::drag_icon,
             list_actions,
+            custom_forms,
             run_action,
+            batch_limit,
             combine_actions,
             run_combine,
             cancel_job,
@@ -164,16 +228,39 @@ pub fn run() {
             recipes::save_recipe,
             recipes::delete_recipe,
             recipes::run_recipe,
+            explorer::take_opened_paths,
+            explorer::get_shell_integration,
+            explorer::set_shell_integration,
+            tutorial::tutorial_info,
+            tutorial::tutorial_drag_started,
+            tutorial::close_tutorial,
+            watch::watch_errors,
+            watch::watch_choices,
+            watch::pick_watch_folder,
+            recipes::next_custom_forms,
+            recipes::check_step,
+            recipes::pick_recipe_folder,
+            editing::media_source,
+            editing::media_preview,
+            editing::crop_source,
+            editing::pdf_ranges,
+            editing::merge_plan,
+            suggest::recipe_suggestion,
+            suggest::dismiss_suggestion,
+            copy_text,
+            open_language_settings,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             settings::load(app.handle());
             app.manage(shelf::load(app.handle()));
 
             let show_shelves = MenuItem::with_id(app, "shelves", "Show shelves", true, None::<&str>)?;
             let new_shelf = MenuItem::with_id(app, "new-shelf", "New shelf", true, None::<&str>)?;
+            let paste = MenuItem::with_id(app, "paste", "Paste to shelf", true, None::<&str>)?;
             let open_settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+            let show_tutorial = MenuItem::with_id(app, "tutorial", "Show tutorial", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Ferryfile", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_shelves, &new_shelf, &open_settings, &quit])?;
+            let menu = Menu::with_items(app, &[&show_shelves, &new_shelf, &paste, &open_settings, &show_tutorial, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Ferryfile")
@@ -188,7 +275,12 @@ pub fn run() {
                         let app = app.clone();
                         tauri::async_runtime::spawn(async move { shelf::new_shelf(&app) });
                     }
+                    "paste" => shelf::paste_from_tray(app),
                     "settings" => settings::open_settings(app.clone()),
+                    "tutorial" => {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move { tutorial::show(&app) });
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -209,6 +301,14 @@ pub fn run() {
             dropbridge::install(&drawer);
             drag::set_focusable(&drawer, false);
             drag::start(app.handle().clone());
+
+            explorer::repair();
+            // The tutorial waits for a plain launch.
+            if opened {
+                explorer::show_when_settled(app.handle());
+            } else {
+                tutorial::show_on_first_run(app.handle());
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -2,6 +2,9 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import { icon, hydrateIcons, iconForPath } from "./icons.js";
+import { customForm } from "./custom.js";
+import { toolsFor, openTool, closeTool, isToolOpen, toolKeydown } from "./editing.js";
+import { createQueue, batchLimit } from "./queue.js";
 
 const $ = (id) => document.getElementById(id);
 const drawer = $("drawer");
@@ -25,6 +28,7 @@ hydrateIcons();
 
 let paths = [];
 let suggestedRun = null;
+let fileInfo = null; // size and pixel dimensions of a single dropped file
 
 const basename = (p) => p.split(/[\\/]/).pop();
 const ext = (p) => (p.includes(".") ? p.split(".").pop().toLowerCase() : "");
@@ -54,10 +58,11 @@ const SHORT = { "compress:75": "Balanced", "compress:50": "Smallest" };
 
 const IMAGES = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff"];
 const AUDIO = ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff", "aif", "wma"];
+const VIDEO = ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv"];
 
 /** The action most people want for this file, if the engines offer it. */
 function preferredIds(path, multiple) {
-  if (multiple) return ["combine:pdf"];
+  if (multiple) return ["combine:pdf", "combine:video"];
   const e = ext(path);
   if (IMAGES.includes(e)) return e === "webp" ? ["convert:png"] : ["convert:webp", "convert:png"];
   if (AUDIO.includes(e)) return e === "mp3" ? ["convert:m4a"] : ["convert:mp3"];
@@ -85,12 +90,15 @@ function setInfo(kind, text = "") {
   $("progress").hidden = kind !== "busy";
   $("info-cancel").hidden = kind !== "busy";
   $("info-show").hidden = !(kind === "ok" && lastOutput);
+  // OCR without an installed language: offer the Windows page that adds one.
+  $("info-fix").hidden = !(kind === "error" && text.includes("Language & region"));
   // A finished result can be dragged straight into another app.
   const draggableResult = kind === "ok" && lastOutputs.length > 0;
   bar.classList.toggle("can-drag", draggableResult);
   bar.title = draggableResult ? "Drag the result into any app" : "";
 }
 $("info-show").addEventListener("click", () => lastOutput && invoke("reveal", { path: lastOutput }));
+$("info-fix").addEventListener("click", () => invoke("open_language_settings"));
 
 // Drag the finished result out of the drawer (same native drag as shelves).
 const iconReady = invoke("drag_icon");
@@ -111,9 +119,44 @@ $("infobar").addEventListener("pointerdown", (down) => {
 
 // ---------------------------------------------------------------- jobs
 
-// Jobs run one at a time; starting another while one runs queues it.
-const queue = []; // { label, job, targets }
-let running = null; // { label, index, count, jobId, cancelled, started }
+// Jobs run one at a time; starting another while one runs queues it. A job
+// on several files runs as a batch in the queue list, a few files at once.
+const queue = []; // { label, job, targets, steps }
+let running = null; // { label, index, count, jobId, cancelled, started, batch }
+let batchStarted = 0;
+
+const batchView = createQueue($("queue"), {
+  onChange(s) {
+    if (!running?.batch) return;
+    running.index = s.settled;
+    $("progress").value = s.fraction;
+    setInfo("busy", jobLabel());
+  },
+  // Also runs after Retry, when the batch itself has long finished.
+  onDone(_, s) {
+    if (running?.batch) running = null;
+    finishBatch(s);
+  },
+});
+
+function finishBatch(s) {
+  if (!s.total) return;
+  lastOutputs = batchView.outputs();
+  lastOutput = lastOutputs.at(-1) ?? null;
+  const skipped = s.skipped ? ` · ${s.skipped} not supported` : "";
+  let text;
+  if (s.failed) {
+    text = `${s.failed} of ${s.total} failed${s.done ? `, ${s.done} saved` : ""}${skipped}`;
+    setInfo("error", text);
+  } else if (s.cancelled) {
+    text = `Cancelled; ${s.done} of ${s.total} saved${skipped}`;
+    setInfo("info", text);
+  } else {
+    text = s.done ? `Saved ${s.done} file${s.done > 1 ? "s" : ""}${skipped}` : `Nothing to do${skipped}`;
+    setInfo(s.done ? "ok" : "info", text);
+  }
+  notifyIfAway(batchStarted, text);
+}
 
 listen("ferryfile-progress", (e) => {
   if (running) $("progress").value = (running.index + e.payload.fraction) / running.count;
@@ -121,15 +164,17 @@ listen("ferryfile-progress", (e) => {
 
 const jobLabel = () => {
   const more = queue.length ? ` · ${queue.length} more queued` : "";
+  if (running.batch) return `${running.label}: ${running.index} of ${running.count} finished…${more}`;
   return `${running.label}${running.count > 1 ? ` (${running.index + 1} of ${running.count})` : ""}…${more}`;
 };
 
 /**
  * Queues `job(path, jobId)` for every target (by default each dropped file);
- * each call gets a job id the Cancel button can stop.
+ * each call gets a job id the Cancel button can stop. `steps` (the action
+ * ids it runs) decide how many files of a batch run at once.
  */
-function runJob(label, job, targets = paths) {
-  queue.push({ label, job, targets: [...targets] });
+function runJob(label, job, targets = paths, steps = []) {
+  queue.push({ label, job, targets: [...targets], steps });
   if (running) setInfo("busy", jobLabel());
   else pump();
 }
@@ -144,7 +189,9 @@ function notifyIfAway(started, body) {
 async function pump() {
   const task = queue.shift();
   if (!task) return;
+  if (task.targets.length > 1) return pumpBatch(task);
   running = { label: task.label, index: 0, count: task.targets.length, jobId: null, cancelled: false, started: Date.now() };
+  hideSuggestion();
   $("progress").value = 0;
   const results = [];
   let failure = null;
@@ -174,11 +221,28 @@ async function pump() {
     const saved = `Saved ${results.map(basename).join(", ")}`;
     setInfo("ok", saved);
     notifyIfAway(started, saved);
+    if (lastOutput && !queue.length) offerRecipe(lastOutput);
   }
   pump();
 }
 
+async function pumpBatch(task) {
+  await batchView.idle(); // a Retry may still be running
+  running = { label: task.label, index: 0, count: task.targets.length, jobId: null, cancelled: false, started: Date.now(), batch: true };
+  batchStarted = running.started;
+  $("progress").value = 0;
+  setInfo("busy", jobLabel());
+  const max = await batchLimit(task.targets[0], task.steps);
+  await batchView.run({ targets: task.targets, run: task.job, max });
+  pump();
+}
+
 $("info-cancel").addEventListener("click", () => {
+  if (batchView.busy()) {
+    queue.length = 0;
+    batchView.cancelAll();
+    return;
+  }
   if (!running) return;
   running.cancelled = true;
   queue.length = 0; // Cancel stops everything that was waiting, too
@@ -198,6 +262,50 @@ async function quick(done, task) {
     setInfo("error", String(err));
   }
 }
+
+// ---------------------------------------------------------------- suggested recipes
+
+// After the same chain of steps has run three times (an action, then another
+// on its output…), the backend offers it as a recipe.
+let suggestion = null; // { steps, stepTitles, samplePath, count }
+
+const chainName = (titles) => {
+  const name = titles.join(" → ");
+  return name.length > 60 ? `${name.slice(0, 59)}…` : name;
+};
+
+async function offerRecipe(output) {
+  let s = null;
+  try {
+    s = await invoke("recipe_suggestion", { path: output });
+  } catch {
+    return;
+  }
+  if (!s || editing || running) return;
+  suggestion = s;
+  $("suggestion-name").textContent = chainName(s.stepTitles);
+  $("suggestion-sub").textContent = `You've run these ${s.steps.length} steps in a row ${s.count} times.`;
+  $("suggestion").hidden = false;
+}
+
+function hideSuggestion() {
+  suggestion = null;
+  $("suggestion").hidden = true;
+}
+
+$("suggestion-save").addEventListener("click", () => {
+  const s = suggestion;
+  if (!s) return;
+  hideSuggestion();
+  openEditor({ id: null, name: chainName(s.stepTitles), steps: s.steps, stepTitles: s.stepTitles }, { basePath: s.samplePath, isNew: true });
+});
+const dismiss = (forever) => () => {
+  if (!suggestion) return;
+  invoke("dismiss_suggestion", { steps: suggestion.steps, forever });
+  hideSuggestion();
+};
+$("suggestion-never").addEventListener("click", dismiss(true));
+$("suggestion-close").addEventListener("click", dismiss(false));
 
 // ---------------------------------------------------------------- building blocks
 
@@ -234,15 +342,86 @@ function group(heading, body) {
 }
 
 const runAction = (a) => () =>
-  runJob(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId }));
+  a.id === COPY_TEXT.id
+    ? copyText()
+    : runJob(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId }), paths, [a.id]);
+
+/** "Copy text": OCR straight to the clipboard, no file. Sits next to "Extract text". */
+const COPY_TEXT = { id: "ocr:copy", label: "Copy text", group: "OCR" };
+async function copyText() {
+  if (running) return;
+  const p = paths[0];
+  setInfo("busy", "Reading text…");
+  $("progress").hidden = true;
+  $("info-cancel").hidden = true;
+  try {
+    const words = await invoke("copy_text", { path: p });
+    lastOutput = null;
+    lastOutputs = [];
+    setInfo("ok", `Copied ${words} word${words === 1 ? "" : "s"} from ${basename(p)}`);
+  } catch (err) {
+    setInfo("error", `${basename(p)}: ${err}`);
+  }
+}
+
+// ---------------------------------------------------------------- custom values
+
+let openCustom = null; // the inline "Custom…" form that's showing
+
+function closeCustom() {
+  openCustom?.remove();
+  openCustom = null;
+}
+
+/** Shows `form`'s inline editor after `anchor`; `onAction(action)` gets the checked step. */
+function showCustom(form, anchor, { steps = [], submitLabel, onAction }) {
+  const same = openCustom?.dataset.group === form.group && openCustom.previousElementSibling === anchor;
+  closeCustom();
+  if (same) return; // clicking "Custom…" again closes it
+  const node = customForm({
+    form,
+    info: paths.length === 1 ? fileInfo : null,
+    isVideo: VIDEO.includes(ext(paths[0])),
+    submitLabel,
+    onCancel: closeCustom,
+    onFocus: () => invoke("focus_drawer"),
+    onSubmit: async (id) => {
+      try {
+        const action = await invoke("check_step", { path: paths[0], steps, step: id });
+        closeCustom();
+        onAction(action);
+      } catch (err) {
+        return err;
+      }
+    },
+  });
+  if (!node) return;
+  node.dataset.group = form.group;
+  anchor.after(node);
+  openCustom = node;
+  invoke("focus_drawer").then(() => node.focusFirst());
+}
+
+const VERBS = { Resize: "Resize", Compress: "Compress", "Shrink to": "Shrink" };
 
 // ---------------------------------------------------------------- render
 
 async function renderActions() {
-  const [actions, combined] = await Promise.all([
+  let [actions, combined, forms] = await Promise.all([
     invoke("list_actions", { path: paths[0] }),
     paths.length > 1 ? invoke("combine_actions", { paths }) : [],
+    invoke("custom_forms", { path: paths[0] }),
   ]);
+  const formFor = (name) => forms.find((f) => f.group === name);
+  // Runs on every file, like the fixed choices.
+  const customRun = (form) => () => {
+    const anchor = groupsEl.querySelector(`[data-group="${CSS.escape(form.group)}"]`);
+    const top = anchor?.parentElement?.classList.contains("pair") ? anchor.parentElement : anchor;
+    showCustom(form, top, { submitLabel: VERBS[form.group] ?? "Run", onAction: (a) => runAction(a)() });
+  };
+
+  const ocrAt = actions.findIndex((a) => a.id === "ocr:txt");
+  if (ocrAt >= 0 && paths.length === 1) actions = [...actions.slice(0, ocrAt + 1), COPY_TEXT, ...actions.slice(ocrAt + 1)];
 
   // Suggested: the most likely action, on Enter.
   const all = [...combined, ...actions];
@@ -252,9 +431,12 @@ async function renderActions() {
   if (pick) {
     const isCombine = combined.includes(pick);
     const verb = pick.group === "Convert" ? `Convert to ${pick.label}` : `${pick.group}: ${pick.label}`;
-    $("suggested-label").textContent = isCombine ? `Combine into ${pick.label.replace(/^One /, "one ")}` : verb;
+    $("suggested-label").textContent =
+      pick.id === "combine:video" ? "Merge videos" : isCombine ? `Combine into ${pick.label.replace(/^One /, "one ")}` : verb;
     suggestedBtn.dataset.search = `${verb} ${pick.id}`.toLowerCase();
-    suggestedRun = isCombine
+    suggestedRun = pick.id === "combine:video"
+      ? () => showTool("merge")
+      : isCombine
       ? () => {
           const all = [...paths]; // the files as they are now, even if the job waits in the queue
           runJob(`Combining ${all.length} files`, (_, jobId) => invoke("run_combine", { actionId: pick.id, paths: all, jobId }), [all[0]]);
@@ -269,6 +451,7 @@ async function renderActions() {
       .filter((a) => a !== pick)
       .map((a) =>
         row(a.label, () => {
+          if (a.id === "combine:video") return showTool("merge");
           const all = [...paths];
           runJob(`${a.group}: ${a.label}`, (_, jobId) => invoke("run_combine", { actionId: a.id, paths: all, jobId }), [all[0]]);
         }, {
@@ -276,6 +459,13 @@ async function renderActions() {
         }),
       );
     if (rows.length) sections.push(group("Combine", el("div", { className: "rows" }, rows)));
+  }
+
+  // Editing tools open an inline view (see editing.js).
+  const tools = toolsFor(paths);
+  if (tools.length) {
+    const rows = tools.map((t) => row(t.label, () => showTool(t.id), { hint: t.hint, search: `edit ${t.label} ${t.id}` }));
+    sections.push(group("Edit", el("div", { className: "rows" }, rows)));
   }
 
   // Short-label groups (Resize, Compress) become segmented controls, paired side by side.
@@ -287,28 +477,32 @@ async function renderActions() {
 
   for (const [name, items] of Map.groupBy(actions, (a) => a.group)) {
     const shown = items.filter((a) => a !== pick);
-    if (!shown.length) continue;
+    const form = formFor(name);
+    if (!shown.length && !form) continue;
     const labels = shown.map((a) => SHORT[a.id] ?? a.label);
-    if (shown.length <= 4 && labels.every((l) => l.length <= 9) && name !== "Convert") {
-      pending.push(
-        group(
-          name,
-          segmented(
-            shown.map((a, i) => ({
-              label: labels[i],
-              title: `${a.group}: ${a.label}`,
-              search: `${a.group} ${a.label} ${labels[i]}`,
-              run: runAction(a),
-            })),
-          ),
-        ),
-      );
+    if (shown.length && shown.length <= 4 && labels.every((l) => l.length <= 9) && name !== "Convert") {
+      const buttons = shown.map((a, i) => ({
+        label: labels[i],
+        title: `${a.group}: ${a.label}`,
+        search: `${a.group} ${a.label} ${labels[i]}`,
+        run: runAction(a),
+      }));
+      const section = group(name, segmented(buttons));
+      if (form) {
+        // In the heading: a fourth segment wouldn't fit beside another group.
+        const b = el("button", { type: "button", className: "icon-btn small custom-btn", textContent: "Custom…", title: `${name}: type your own value`, onclick: customRun(form) });
+        b.dataset.search = `${name} custom own value`;
+        section.firstChild.append(el("span", { className: "spacer" }), b);
+      }
+      section.dataset.group = name;
+      pending.push(section);
       if (pending.length === 2) flushPair();
       continue;
     }
     flushPair();
     const heading = name === "Convert" ? "Convert to" : name;
     const rows = shown.map((a) => row(a.label, runAction(a), { search: `${a.group} ${a.label}` }));
+    if (form) rows.push(row("Custom…", customRun(form), { search: `${name} custom own value` }));
     const body = el("div", { className: "rows" }, rows.slice(0, 5));
     if (rows.length > 5) {
       const rest = rows.slice(5);
@@ -321,7 +515,9 @@ async function renderActions() {
       more.dataset.search = rest.map((r) => r.dataset.search).join(" ");
       body.append(more);
     }
-    sections.push(group(heading, body));
+    const section = group(heading, body);
+    section.dataset.group = name;
+    sections.push(section);
   }
   flushPair();
 
@@ -335,7 +531,7 @@ async function renderRecipes() {
       const edit = r.builtin
         ? null
         : el("button", { type: "button", className: "icon-btn edit", title: "Edit recipe", ariaLabel: "Edit recipe", onclick: () => openEditor(r) }, [icon("edit")]);
-      return row(r.name, () => runJob(r.name, (p, jobId) => invoke("run_recipe", { id: r.id, path: p, jobId })), {
+      return row(r.name, () => runJob(r.name, (p, jobId) => invoke("run_recipe", { id: r.id, path: p, jobId }), paths, r.steps), {
         hint: r.stepTitles.join(" · "),
         search: `recipe ${r.name}`,
         extra: edit,
@@ -385,8 +581,10 @@ async function renderFileCard() {
   $("file-name").textContent = basename(p);
   $("file-name").title = p;
   $("file-meta").textContent = "";
+  fileInfo = null;
   try {
     const info = await invoke("file_info", { path: p });
+    fileInfo = info;
     const parts = [info.kind];
     if (info.isDir) parts.push(`${info.items ?? 0} items`);
     else parts.push(formatBytes(info.size));
@@ -419,22 +617,48 @@ function applySearch() {
   const q = searchEl.value.trim().toLowerCase();
   const match = (node) => !q || node.dataset.search?.includes(q);
   suggestedBtn.hidden = !suggestedRun || !match(suggestedBtn);
-  for (const node of toolsEl.querySelectorAll(".row, .segmented button, .tile")) {
+  for (const node of toolsEl.querySelectorAll(".row, .segmented button, .tile, .custom-btn")) {
     node.hidden = !match(node);
   }
   for (const section of toolsEl.querySelectorAll(".group")) {
-    const any = section.querySelector(".row:not([hidden]), .segmented button:not([hidden]), .tile:not([hidden])");
+    const any = section.querySelector(".row:not([hidden]), .segmented button:not([hidden]), .tile:not([hidden]), .custom-btn:not([hidden])");
     section.hidden = !any || (section.id === "recipes-group" && !recipeRows.children.length);
   }
   renumber();
 }
 
+/** Opens an editing view in place of the action list. */
+function showTool(id) {
+  closeEditor();
+  closeCustom();
+  toolsEl.hidden = true;
+  openTool(id, {
+    paths: [...paths],
+    runJob,
+    saveRecipe: (step) => {
+      closeTool();
+      openEditor(null, { steps: [step] });
+    },
+    onClose: () => {
+      toolsEl.hidden = false;
+      applySearch();
+    },
+  });
+}
+
 async function showFiles(dropped) {
+  closeTool();
   paths = dropped;
+  fileInfo = null;
+  openCustom = null; // its node goes with the old groups
   idle.hidden = paths.length > 0;
   content.hidden = paths.length === 0;
   closeEditor();
-  setInfo(null);
+  if (!batchView.busy()) {
+    batchView.clear();
+    setInfo(null);
+  }
+  hideSuggestion();
   if (!paths.length) return;
 
   searchEl.value = "";
@@ -448,16 +672,26 @@ suggestedBtn.addEventListener("click", () => suggestedRun?.());
 
 // ---------------------------------------------------------------- editor
 
-let editing = null; // { id: string | null, steps: [{ id, title }] }
+// basePath: a file like the one the recipe starts from (a suggestion's chain
+// may start from another format than the file in the drawer now).
+let editing = null; // { id: string | null, steps: [{ id, title }], outputDir: string | null, basePath }
+let stepForms = []; // "Custom…" entries offered in the add-step list
 
-function openEditor(recipe) {
+/**
+ * `steps` pre-fills a new recipe (e.g. a trim from the Trim view); `basePath`
+ * and `isNew` come from a suggested recipe.
+ */
+function openEditor(recipe, { steps = [], basePath = null, isNew = !recipe } = {}) {
+  closeCustom();
   editing = {
     id: recipe?.id ?? null,
-    steps: recipe ? recipe.steps.map((id, i) => ({ id, title: recipe.stepTitles[i] })) : [],
+    steps: recipe ? recipe.steps.map((id, i) => ({ id, title: recipe.stepTitles[i] })) : [...steps],
+    outputDir: recipe?.outputDir ?? null,
+    basePath,
   };
-  $("editor-title").textContent = recipe ? "Edit recipe" : "New recipe";
-  nameEl.value = recipe?.name ?? "";
-  deleteBtn.hidden = !recipe;
+  $("editor-title").textContent = isNew ? "New recipe" : "Edit recipe";
+  nameEl.value = recipe?.name ?? steps[0]?.title ?? "";
+  deleteBtn.hidden = isNew;
   toolsEl.hidden = true;
   editor.hidden = false;
   setInfo(null);
@@ -466,6 +700,7 @@ function openEditor(recipe) {
 }
 
 function closeEditor() {
+  closeCustom();
   editing = null;
   editor.hidden = true;
   toolsEl.hidden = false;
@@ -494,16 +729,30 @@ async function refreshEditor() {
     ),
   );
 
+  renderRecipeFolder();
   let next = [];
+  stepForms = [];
   editorError.textContent = "";
+  const steps = editing.steps.map((s) => s.id);
   try {
-    next = await invoke("next_actions", { path: paths[0], steps: editing.steps.map((s) => s.id) });
+    const base = editing.basePath ?? paths[0];
+    [next, stepForms] = await Promise.all([
+      invoke("next_actions", { path: base, steps }),
+      invoke("next_custom_forms", { path: base, steps }),
+    ]);
   } catch (err) {
     editorError.textContent = err;
   }
+  // Each group's "Custom…" entry sits right after its fixed choices.
+  const options = [];
+  for (const [name, items] of Map.groupBy(next, (a) => a.group)) {
+    options.push(...items.map((a) => el("option", { value: a.id, textContent: `${a.group} ${a.label}` })));
+    const i = stepForms.findIndex((f) => f.group === name);
+    if (i >= 0) options.push(el("option", { value: `form:${i}`, textContent: `${name} custom…` }));
+  }
   addStepEl.replaceChildren(
     el("option", { value: "", textContent: next.length ? "Add a step…" : "No further steps for this format" }),
-    ...next.map((a) => el("option", { value: a.id, textContent: `${a.group} ${a.label}` })),
+    ...options,
   );
   addStepEl.disabled = !next.length;
   saveBtn.disabled = !!editorError.textContent || !editing.steps.length;
@@ -512,14 +761,48 @@ async function refreshEditor() {
 addStepEl.addEventListener("change", () => {
   const opt = addStepEl.selectedOptions[0];
   if (!opt?.value) return;
+  if (opt.value.startsWith("form:")) {
+    addStepEl.value = "";
+    const form = stepForms[Number(opt.value.slice(5))];
+    showCustom(form, addStepEl, {
+      steps: editing.steps.map((s) => s.id),
+      submitLabel: "Add step",
+      onAction: (a) => {
+        editing.steps.push({ id: a.id, title: `${a.group} ${a.label}` });
+        refreshEditor();
+      },
+    });
+    return;
+  }
+  closeCustom();
   editing.steps.push({ id: opt.value, title: opt.textContent });
   refreshEditor();
+});
+
+// A recipe can save somewhere other than the "Save to" folder in Settings.
+function renderRecipeFolder() {
+  const dir = editing.outputDir;
+  $("recipe-folder").textContent = dir ?? "Same as Settings";
+  $("recipe-folder").title = dir ?? "Uses the Save to choice in Settings";
+  $("recipe-folder").classList.toggle("unset", !dir);
+  $("recipe-folder-clear").hidden = !dir;
+}
+$("recipe-folder-pick").addEventListener("click", async () => {
+  const dir = await invoke("pick_recipe_folder");
+  if (dir && editing) {
+    editing.outputDir = dir;
+    renderRecipeFolder();
+  }
+});
+$("recipe-folder-clear").addEventListener("click", () => {
+  editing.outputDir = null;
+  renderRecipeFolder();
 });
 
 editor.addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    await invoke("save_recipe", { id: editing.id, name: nameEl.value, steps: editing.steps.map((s) => s.id) });
+    await invoke("save_recipe", { id: editing.id, name: nameEl.value, steps: editing.steps.map((s) => s.id), outputDir: editing.outputDir });
   } catch (err) {
     editorError.textContent = err;
     return;
@@ -557,6 +840,15 @@ for (const input of [searchEl, nameEl]) {
 
 window.addEventListener("keydown", (e) => {
   const typing = e.target.matches("input, select, textarea");
+  if (e.target.closest?.(".custom-form")) return; // the form handles Enter and Esc
+  if (isToolOpen()) {
+    if (e.key === "Escape") {
+      closeTool();
+      toolsEl.hidden = false;
+      applySearch();
+    } else toolKeydown(e);
+    return;
+  }
   if (editing) {
     if (e.key === "Escape") closeEditor();
     return;
@@ -597,7 +889,10 @@ listen("ferryfile-drag-start", (e) => {
   paths = [];
   idle.hidden = false;
   content.hidden = true;
-  setInfo(null);
+  if (!batchView.busy()) {
+    batchView.clear();
+    setInfo(null);
+  }
   drawer.classList.add("open");
 });
 listen("ferryfile-drag-end", () => drawer.classList.remove("open", "hover"));
@@ -622,7 +917,26 @@ document.addEventListener("drop", (e) => {
   window.chrome.webview.postMessageWithAdditionalObjects("ferryfile-drop", files);
 });
 listen("ferryfile-dropped", async (e) => {
+  if (!e.payload.length) return; // only files without a path (from a browser)
   await showFiles(e.payload);
   // The drag is over: take keyboard focus so Enter and 1–9 work right away.
   invoke("focus_drawer");
 });
+
+// Files sent from Explorer's right-click menu or Send to: shown like a drop.
+// Also checked once at load, in case they came in before this page did.
+let lastOpened = { paths: null, at: 0 };
+async function showOpened() {
+  const { side, paths: opened } = await invoke("take_opened_paths");
+  if (!opened.length) return;
+  document.body.classList.toggle("left", side === "left");
+  drawer.classList.add("open");
+  // Explorer starts one launch per selected file; a slow one can arrive a
+  // moment after the rest. Add it to what's showing instead of replacing it.
+  const late = paths === lastOpened.paths && Date.now() - lastOpened.at < 3000;
+  const all = late ? [...new Set([...paths, ...opened])] : opened;
+  lastOpened = { paths: all, at: Date.now() };
+  await showFiles(all);
+}
+// Listen first, then check: paths that land in between still get picked up.
+listen("ferryfile-opened", showOpened).then(showOpened);

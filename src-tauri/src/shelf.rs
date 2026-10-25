@@ -5,12 +5,17 @@
 //! Each shelf is its own window (`shelf-<id>`). Shelves that hold items survive
 //! restarts; items that no longer exist are dropped quietly. An unpinned shelf
 //! closes itself once you've dragged everything out of it.
+//!
+//! Text, links and images (dropped or pasted) are saved as files in a
+//! "Shelf items" folder first, so shelves only ever hold paths.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+
+use crate::content::{self, Content};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const CHANGED_EVENT: &str = "ferryfile-shelf-changed";
@@ -66,6 +71,7 @@ pub fn load(app: &AppHandle) -> Shelves {
         s.items.retain(|p| Path::new(p).exists());
     }
     shelves.retain(|s| !s.items.is_empty() || s.pinned);
+    clean_content(app, &shelves);
     Shelves { shelves: Mutex::new(shelves), last_used: Mutex::new(None) }
 }
 
@@ -192,9 +198,8 @@ pub fn shelf_state(app: AppHandle, shelves: State<Shelves>, id: String) -> Optio
 }
 
 /// Adds items to shelf `id`, or to the last-used shelf (creating and showing
-/// one if needed) when `id` is None.
-#[tauri::command]
-pub async fn shelf_add(app: AppHandle, id: Option<String>, paths: Vec<String>) -> Result<String, String> {
+/// one if needed) when `id` is None. Returns the shelf's id.
+pub fn add(app: &AppHandle, id: Option<String>, paths: Vec<String>) -> String {
     let shelves = app.state::<Shelves>();
     let (id, need_window) = {
         let mut list = shelves.shelves.lock().unwrap();
@@ -213,15 +218,142 @@ pub async fn shelf_add(app: AppHandle, id: Option<String>, paths: Vec<String>) -
                 shelf.items.push(p);
             }
         }
-        changed(&app, &list, &id);
+        changed(app, &list, &id);
         let need_window = app.get_webview_window(&label(&id)).is_none();
         (id, need_window)
     };
     *shelves.last_used.lock().unwrap() = Some(id.clone());
     if need_window {
-        open_window(&app, &id, None);
+        open_window(app, &id, None);
     }
-    Ok(id)
+    id
+}
+
+#[tauri::command]
+pub async fn shelf_add(app: AppHandle, id: Option<String>, paths: Vec<String>) -> Result<String, String> {
+    Ok(add(&app, id, paths))
+}
+
+// ---------------------------------------------------------------- content
+
+/// Where text, links and images put on a shelf are saved as files.
+fn content_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path().app_local_data_dir().map(|d| d.join("Shelf items")).map_err(|e| e.to_string())
+}
+
+/// Saves `content` as files and puts them on shelf `id` (or the last-used
+/// one). Returns the files' paths.
+async fn add_content(app: AppHandle, id: Option<String>, content: Content) -> Result<Vec<String>, String> {
+    let dir = content_dir(&app)?;
+    let paths = tauri::async_runtime::spawn_blocking(move || content::save(content, &dir, &content::stamp()))
+        .await
+        .map_err(|e| e.to_string())??;
+    let paths: Vec<String> = paths.into_iter().map(|p| p.to_string_lossy().into_owned()).collect();
+    add(&app, id, paths.clone());
+    Ok(paths)
+}
+
+/// Text dropped from another app becomes a .txt (a lone link, a .url).
+#[tauri::command]
+pub async fn shelf_add_text(app: AppHandle, id: String, text: String) -> Result<Vec<String>, String> {
+    add_content(app, Some(id), Content::Text(text)).await
+}
+
+/// A link dropped from a browser becomes an Internet Shortcut (.url).
+#[tauri::command]
+pub async fn shelf_add_url(app: AppHandle, id: String, url: String, title: Option<String>) -> Result<Vec<String>, String> {
+    add_content(app, Some(id), Content::Url { url, title }).await
+}
+
+/// File data with no path on disk, like an image dragged out of a browser or
+/// an Outlook attachment (raw request body; the shelf id and a URL-encoded
+/// file name come as `x-shelf-id` / `x-name` headers). Images not in a common
+/// format become PNGs; anything else keeps its name.
+#[tauri::command]
+pub async fn shelf_add_bytes(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<Vec<String>, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Expected image data".into());
+    };
+    let header = |k: &str| request.headers().get(k).and_then(|v| v.to_str().ok()).map(percent_decode);
+    let id = header("x-shelf-id");
+    let name = header("x-name").filter(|n| !n.is_empty());
+    add_content(app, id, Content::Image { bytes: bytes.clone(), name }).await
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let hex = |c: u8| (c as char).to_digit(16);
+        match (b[i], b.get(i + 1).copied().and_then(hex), b.get(i + 2).copied().and_then(hex)) {
+            (b'%', Some(h), Some(l)) => {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+            }
+            (c, _, _) => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Puts the clipboard on a shelf: images become PNGs, text a .txt, copied
+/// files are added as they are. `id` None: the last-used shelf (or a new one).
+#[tauri::command]
+pub async fn shelf_paste(app: AppHandle, id: Option<String>) -> Result<Vec<String>, String> {
+    let content = tauri::async_runtime::spawn_blocking(read_clipboard).await.map_err(|e| e.to_string())??;
+    add_content(app, id, content).await
+}
+
+#[cfg(windows)]
+fn read_clipboard() -> Result<Content, String> {
+    content::read_clipboard()
+}
+#[cfg(not(windows))]
+fn read_clipboard() -> Result<Content, String> {
+    Err("Pasting needs Windows".into())
+}
+
+/// Tray item: paste onto the last-used shelf, telling you if nothing could be pasted.
+pub fn paste_from_tray(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = shelf_paste(app.clone(), None).await {
+            use tauri_plugin_notification::NotificationExt;
+            let _ = app.notification().builder().title("Nothing to paste").body(e).show();
+        }
+    });
+}
+
+/// Shelves don't take focus (so drags in never steal it); clicking one lets
+/// it, so Ctrl+V works. It gives focus up again when it loses it.
+#[tauri::command]
+pub fn shelf_focus(app: AppHandle, id: String, focus: bool) {
+    if let Some(w) = app.get_webview_window(&label(&id)) {
+        crate::drag::set_focusable(&w, focus);
+        if focus {
+            let _ = w.set_focus();
+        }
+    }
+}
+
+/// Saved content nobody's shelf holds any more, kept a day in case an app
+/// you dragged it into still reads it.
+fn clean_content(app: &AppHandle, shelves: &[ShelfData]) {
+    let Ok(dir) = content_dir(app) else { return };
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    let day = std::time::Duration::from_secs(24 * 3600);
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let held = shelves.iter().any(|s| s.items.iter().any(|i| Path::new(i) == path));
+        let old = entry.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > day);
+        if !held && old {
+            let _ = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+        }
+    }
 }
 
 /// Removes items. With `dragged_out`, an unpinned shelf that ends up empty closes.

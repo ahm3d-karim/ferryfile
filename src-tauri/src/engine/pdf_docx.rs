@@ -10,26 +10,50 @@ use pdfium_render::prelude::*;
 use super::doc_engine::pandoc;
 use super::pdf_engine::pdfium;
 use super::pdf_layout::{blocks, page_lines, page_pictures, to_markdown, Page};
-use super::{output_path, tool_command, Progress};
+use super::ocr::Recognizer;
+use super::pdf_ocr::{ocr_page, ocr_plan, snap_sizes, MIN_CHARS_PER_PAGE};
+use super::{jobs, output_path, tool_command, Progress};
 
 /// A hard page break in pandoc's DOCX writer.
 const DOCX_PAGE_BREAK: &str = "```{=openxml}\n<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>\n```";
 
-/// Fewer visible characters per page than this means there's no text layer.
-const MIN_CHARS_PER_PAGE: usize = 3;
-
 pub(super) const NO_TEXT: &str = "No text found: this looks like a scanned PDF";
 
-/// Reads every page's lines (and, with `media`, its images).
+/// Reads every page's lines (and, with `media`, its images). Pages without a
+/// text layer (scans) are read with OCR instead.
 pub(super) fn read_pages(doc: &PdfDocument, media: Option<&Path>, progress: Progress) -> Result<Vec<Page>, String> {
+    let err = |e: PdfiumError| format!("PDF error: {e}");
     let count = doc.pages().len() as usize;
     let mut pages = Vec::with_capacity(count);
-    for (i, page) in doc.pages().iter().enumerate() {
-        let lines = page_lines(&page)?;
-        let pictures = media.map(|m| page_pictures(doc, &page, i, m)).unwrap_or_default();
-        pages.push(Page { lines, pictures });
-        progress((i + 1) as f32 / count.max(1) as f32);
+    for page in doc.pages().iter() {
+        pages.push(Page { lines: page_lines(&page)?, pictures: Vec::new() });
     }
+    let counts: Vec<usize> = pages.iter().map(|p| p.lines.iter().map(|l| l.text.chars().count()).sum()).collect();
+    let todo = if counts.iter().any(|&n| n < MIN_CHARS_PER_PAGE) {
+        let rec = Recognizer::new();
+        let todo = ocr_plan(&counts, rec.as_ref().err().map(String::as_str))?;
+        if let Ok(rec) = rec {
+            for (n, &i) in todo.iter().enumerate() {
+                jobs::check()?;
+                let page = doc.pages().get(i as PdfPageIndex).map_err(err)?;
+                pages[i].lines = ocr_page(&rec, &page)?.layout_lines();
+                progress((n + 1) as f32 / todo.len() as f32 * 0.8);
+            }
+        }
+        todo
+    } else {
+        Vec::new()
+    };
+    snap_sizes(&mut pages, &todo);
+    // Pictures last: pdfium renders a page blank once its images were read.
+    // OCR'd pages skip them (the scan itself isn't a picture worth keeping).
+    if let Some(media) = media {
+        for i in (0..count).filter(|i| !todo.contains(i)) {
+            let page = doc.pages().get(i as PdfPageIndex).map_err(err)?;
+            pages[i].pictures = page_pictures(doc, &page, i, media);
+        }
+    }
+    progress(1.0);
     let chars: usize = pages.iter().flat_map(|p| &p.lines).map(|l| l.text.chars().count()).sum();
     if chars < MIN_CHARS_PER_PAGE * count.max(1) {
         return Err(NO_TEXT.into());
@@ -38,10 +62,10 @@ pub(super) fn read_pages(doc: &PdfDocument, media: Option<&Path>, progress: Prog
 }
 
 /// Reflowed Markdown for the whole PDF (no images), used by "Markdown".
-pub(super) fn pdf_markdown(input: &Path) -> Result<String, String> {
+pub(super) fn pdf_markdown(input: &Path, progress: Progress) -> Result<String, String> {
     let pdfium = pdfium()?;
     let doc = pdfium.load_pdf_from_file(input, None).map_err(|e| format!("PDF error: {e}"))?;
-    let pages = read_pages(&doc, None, &|_| {})?;
+    let pages = read_pages(&doc, None, progress)?;
     Ok(to_markdown(&blocks(&pages), None))
 }
 

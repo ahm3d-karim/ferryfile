@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { setupWatch, render as renderWatch } from "./settings-watch.js";
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -47,12 +48,19 @@ function render() {
   warn.hidden = !(state.hotkey && !state.hotkeyActive);
   warn.textContent = "Another app already uses this combo. Pick a different one.";
   $("shake").checked = state.shakeToShelf;
+  $("suggest-recipes").checked = state.suggestRecipes;
   setSeg("shakeSensitivity", state.shakeSensitivity);
   $("sensitivity-card").classList.toggle("off", !state.shakeToShelf);
   setSeg("output", state.outputDir ? "folder" : "next");
   $("folder-card").hidden = !state.outputDir;
   $("folder-path").textContent = state.outputDir ?? "";
+  $("replace-original").checked = state.replaceOriginal;
+  // Don't fight the cursor while someone is typing a pattern.
+  if (document.activeElement !== patternEl) patternEl.value = state.namePattern;
+  $("name-reset").hidden = patternEl.value === DEFAULT_PATTERN;
+  previewNames();
   $("about").textContent = `Ferryfile ${state.version}`;
+  renderWatch();
 }
 
 async function save() {
@@ -65,8 +73,12 @@ async function save() {
         drawerSide: state.drawerSide,
         openDelayMs: state.openDelayMs,
         outputDir: state.outputDir,
+        namePattern: state.namePattern,
+        replaceOriginal: state.replaceOriginal,
         shakeToShelf: state.shakeToShelf,
         shakeSensitivity: state.shakeSensitivity,
+        watchFolders: state.watchFolders,
+        suggestRecipes: state.suggestRecipes,
       },
       autostart: state.autostart,
     });
@@ -78,6 +90,7 @@ async function save() {
     state = await invoke("get_settings");
   }
   render();
+setupWatch({ getState: () => state, save });
 }
 
 async function chooseFolder() {
@@ -132,6 +145,7 @@ async function onRecordKey(e) {
   if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
     await stopRecording();
     return render();
+setupWatch({ getState: () => state, save });
   }
   const mods = [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Super"].filter(Boolean);
   const key = keyName(e.code);
@@ -150,7 +164,9 @@ for (const r of Object.values(RECORDERS)) {
     const was = recording;
     if (was) await stopRecording();
     if (was === r) return render();
+setupWatch({ getState: () => state, save });
     render();
+setupWatch({ getState: () => state, save });
     recording = r;
     // Turn the drawer hotkey off meanwhile, so pressing it reaches this page.
     await invoke("pause_hotkey", { paused: true }).catch(() => {});
@@ -162,6 +178,7 @@ for (const r of Object.values(RECORDERS)) {
     if (recording === r) {
       await stopRecording();
       render();
+setupWatch({ getState: () => state, save });
     }
   });
   r.reset.title = `Back to ${r.fallback}`;
@@ -179,6 +196,10 @@ $("shake").addEventListener("change", (e) => {
   state.shakeToShelf = e.target.checked;
   save();
 });
+$("suggest-recipes").addEventListener("change", (e) => {
+  state.suggestRecipes = e.target.checked;
+  save();
+});
 onSeg("shakeSensitivity", (v) => {
   state.shakeSensitivity = v;
   save();
@@ -187,6 +208,7 @@ onSeg("output", async (v) => {
   if (v === "folder") {
     // Choosing "A folder I choose" asks for the folder right away.
     if (!state.outputDir && !(await chooseFolder())) return render();
+setupWatch({ getState: () => state, save });
   } else {
     state.outputDir = null;
   }
@@ -195,7 +217,85 @@ onSeg("output", async (v) => {
 $("pick").addEventListener("click", async () => {
   if (await chooseFolder()) save();
 });
+// ---- file names
+const DEFAULT_PATTERN = "{name}.{ext}";
+const patternEl = $("name-pattern");
+let previewSeq = 0;
+
+/** Shows what the typed pattern names two sample files; true if it's valid. */
+async function previewNames() {
+  const seq = ++previewSeq;
+  const box = $("name-preview");
+  let rows;
+  let ok = true;
+  try {
+    const names = await invoke("preview_names", { pattern: patternEl.value });
+    rows = names.map(({ action, name }) => {
+      const r = document.createElement("span");
+      r.className = "preview-row";
+      r.append(`${action} → `, Object.assign(document.createElement("b"), { textContent: name }));
+      return r;
+    });
+  } catch (err) {
+    ok = false;
+    rows = [Object.assign(document.createElement("span"), { className: "preview-row error", textContent: String(err) })];
+  }
+  if (seq !== previewSeq) return ok; // a newer keystroke won
+  box.replaceChildren(...rows);
+  patternEl.classList.toggle("invalid", !ok);
+  return ok;
+}
+
+patternEl.addEventListener("input", () => {
+  $("name-reset").hidden = patternEl.value === DEFAULT_PATTERN;
+  previewNames();
+});
+// Saved when you leave the box (or press Enter), and only if it works.
+patternEl.addEventListener("change", async () => {
+  if (patternEl.value === state.namePattern || !(await previewNames())) return;
+  state.namePattern = patternEl.value;
+  save();
+});
+patternEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") patternEl.blur();
+  if (e.key === "Escape") {
+    patternEl.value = state.namePattern;
+    patternEl.blur();
+    render();
+  }
+});
+$("name-reset").addEventListener("click", () => {
+  patternEl.value = state.namePattern = DEFAULT_PATTERN;
+  save();
+});
+$("replace-original").addEventListener("change", (e) => {
+  state.replaceOriginal = e.target.checked;
+  save();
+});
+
 $("folder-path").addEventListener("click", () => invoke("reveal", { path: state.outputDir }).catch(() => {}));
 $("config").addEventListener("click", () => invoke("reveal", { path: state.configDir }).catch(() => {}));
 
 render();
+
+// Explorer integration lives in the registry and the SendTo folder, not in
+// settings.json, so the switches read what's actually there.
+async function showIntegration(pending) {
+  try {
+    const now = await (pending ?? invoke("get_shell_integration"));
+    $("context-menu").checked = now.contextMenu;
+    $("send-to").checked = now.sendTo;
+    if (pending) statusEl.textContent = "";
+  } catch (err) {
+    statusEl.textContent = String(err);
+    statusEl.className = "error";
+    showIntegration();
+  }
+}
+for (const [id, kind] of [["context-menu", "contextMenu"], ["send-to", "sendTo"]]) {
+  $(id).addEventListener("change", (e) =>
+    showIntegration(invoke("set_shell_integration", { kind, enabled: e.target.checked })),
+  );
+}
+showIntegration();
+setupWatch({ getState: () => state, save });

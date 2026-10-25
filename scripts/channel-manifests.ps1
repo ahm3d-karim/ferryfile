@@ -101,8 +101,9 @@ $scoop = [ordered]@{
     description  = 'Offline drag-and-drop file converter for Windows'
     homepage     = "https://github.com/$repo"
     license      = 'MIT'
-    notes        = 'Ferryfile runs in the system tray. Drag a file from Explorer to open the drawer.'
+    notes        = 'Ferryfile runs in the system tray. Drag a file from Explorer to open the drawer. Run `ferryfile --help` for the command line.'
     architecture = [ordered]@{ '64bit' = [ordered]@{ url = "$base/$portable"; hash = $portableHash } }
+    bin          = 'ferryfile.exe'
     shortcuts    = @(, @('ferryfile.exe', 'Ferryfile'))
     checkver     = [ordered]@{ github = "https://github.com/$repo" }
     autoupdate   = [ordered]@{

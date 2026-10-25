@@ -94,6 +94,72 @@
             <button type="button" id="folder-path" class="path" title="Show in Explorer"></button>
             <button type="button" id="pick" class="btn small">Change…</button>
           </div>
+          <div class="item">
+            <label class="item-text" for="name-pattern">
+              <span class="item-title">File names</span>
+              <span class="item-desc">Use {name} {ext} {action} {date} {n}</span>
+            </label>
+            <span class="pattern-wrap">
+              <button type="button" id="name-reset" class="link-btn">Reset</button>
+              <input id="name-pattern" class="textbox pattern" type="text" spellcheck="false" autocomplete="off" maxlength="120" />
+            </span>
+          </div>
+          <div class="item sub" id="name-preview-card">
+            <span class="item-text" id="name-preview" aria-live="polite"></span>
+          </div>
+          <label class="item" for="replace-original">
+            <span class="item-text">
+              <span class="item-title">Replace the original</span>
+              <span class="item-desc">Once the new file is saved and checked, the original goes to the Recycle Bin</span>
+            </span>
+            <input id="replace-original" class="switch" type="checkbox" role="switch" />
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Explorer</h2>
+        <div class="group">
+          <label class="item" for="context-menu">
+            <span class="item-text">
+              <span class="item-title">Show in right-click menu</span>
+              <span class="item-desc">Adds Convert with Ferryfile to files and folders. On Windows 11 it's under Show more options.</span>
+            </span>
+            <input id="context-menu" class="switch" type="checkbox" role="switch" />
+          </label>
+          <label class="item" for="send-to">
+            <span class="item-text">
+              <span class="item-title">Show in Send to</span>
+              <span class="item-desc">Right-click, Send to, Ferryfile</span>
+            </span>
+            <input id="send-to" class="switch" type="checkbox" role="switch" />
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Watch folders</h2>
+        <div class="group" id="watch-list">
+          <div class="item" id="watch-add-row">
+            <span class="item-text">
+              <span class="item-title">Add a folder</span>
+              <span class="item-desc">New files that land there are converted automatically</span>
+            </span>
+            <button type="button" id="watch-add" class="btn small">Choose…</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Recipes</h2>
+        <div class="group">
+          <label class="item" for="suggest-recipes">
+            <span class="item-text">
+              <span class="item-title">Suggest recipes</span>
+              <span class="item-desc">Offer to save steps you keep repeating. What you run stays on this PC.</span>
+            </span>
+            <input id="suggest-recipes" class="switch" type="checkbox" role="switch" />
+          </label>
         </div>
       </section>
 

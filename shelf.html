@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ferryfile Shelf</title>
     <link rel="stylesheet" href="/src/fluent.css" />
+    <link rel="stylesheet" href="/src/queue.css" />
     <link rel="stylesheet" href="/src/shelf.css" />
   </head>
   <body>
@@ -12,16 +13,18 @@
       <header data-tauri-drag-region>
         <span class="title" data-tauri-drag-region>Shelf</span>
         <span id="count" class="count" data-tauri-drag-region></span>
+        <button id="paste" class="icon-btn small" title="Paste the clipboard as a file (Ctrl+V): screenshots become PNGs, text a TXT">Paste</button>
         <button id="pin" class="icon-btn" data-icon="pin" title="Pin shelf" aria-label="Pin shelf"></button>
         <button id="close" class="icon-btn" data-icon="close" title="Close shelf (files stay where they are)" aria-label="Close shelf"></button>
       </header>
 
       <div id="empty" class="empty">
         <span data-icon="drop" data-icon-class="icon drop"></span>
-        <p>Drop files here</p>
-        <span class="sub">Drag them out again whenever you need them.</span>
+        <p>Drop files, text or links here</p>
+        <span class="sub">Or paste with Ctrl+V. Drag them out again whenever you need them.</span>
       </div>
       <ul id="items"></ul>
+      <section id="queue" hidden aria-label="Batch queue"></section>
 
       <section id="panel" hidden>
         <div id="groups"></div>

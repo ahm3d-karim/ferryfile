@@ -16,6 +16,9 @@ pub struct Recipe {
     pub name: String,
     /// Action ids, run in order.
     pub steps: Vec<String>,
+    /// Saves here instead of the "Save to" folder in Settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_dir: Option<String>,
 }
 
 /// What the drawer gets: a recipe that applies to the dropped file.
@@ -27,6 +30,7 @@ pub struct RecipeView {
     pub steps: Vec<String>,
     pub step_titles: Vec<String>,
     pub builtin: bool,
+    pub output_dir: Option<String>,
 }
 
 const BUILTIN_PREFIX: &str = "builtin:";
@@ -36,6 +40,7 @@ fn builtins() -> Vec<Recipe> {
         id: format!("{BUILTIN_PREFIX}{id}"),
         name: name.into(),
         steps: steps.iter().map(|s| s.to_string()).collect(),
+        output_dir: None,
     };
     vec![
         r("web-image", "Web-ready image", &["resize:50", "convert:webp"]),
@@ -52,12 +57,37 @@ fn store_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("recipes.json"))
 }
 
-fn load_custom(app: &AppHandle) -> Vec<Recipe> {
-    store_path(app)
+fn load_custom_from(path: &Path) -> Vec<Recipe> {
+    std::fs::read_to_string(path)
         .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+fn load_custom(app: &AppHandle) -> Vec<Recipe> {
+    store_path(app).map(|p| load_custom_from(&p)).unwrap_or_default()
+}
+
+/// Built-in and saved recipes, read from `config_dir` (for the CLI, which
+/// runs without the app).
+pub fn all_in(config_dir: &Path) -> Vec<Recipe> {
+    let mut v = builtins();
+    v.extend(load_custom_from(&config_dir.join("recipes.json")));
+    v
+}
+
+/// The recipe `query` names: its id, its id without `builtin:`, or its name
+/// (any case).
+pub fn lookup(recipes: Vec<Recipe>, query: &str) -> Option<Recipe> {
+    let q = query.trim();
+    let short = |r: &Recipe| r.id.strip_prefix(BUILTIN_PREFIX).map(str::to_string);
+    let by_id = recipes.iter().position(|r| r.id == q || short(r).as_deref() == Some(q));
+    let i = by_id.or_else(|| recipes.iter().position(|r| r.name.eq_ignore_ascii_case(q)))?;
+    recipes.into_iter().nth(i)
+}
+
+pub fn is_builtin(id: &str) -> bool {
+    id.starts_with(BUILTIN_PREFIX)
 }
 
 fn save_custom(app: &AppHandle, recipes: &[Recipe]) -> Result<(), String> {
@@ -72,19 +102,25 @@ fn save_custom(app: &AppHandle, recipes: &[Recipe]) -> Result<(), String> {
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
-fn all(app: &AppHandle) -> Vec<Recipe> {
+pub fn all(app: &AppHandle) -> Vec<Recipe> {
     let mut v = builtins();
     v.extend(load_custom(app));
     v
 }
 
+/// Steps of every recipe, built-in and custom (to skip suggesting a saved one).
+pub fn all_steps(app: &AppHandle) -> Vec<Vec<String>> {
+    all(app).into_iter().map(|r| r.steps).collect()
+}
+
 fn view(recipe: Recipe, actions: Vec<Action>) -> RecipeView {
     RecipeView {
-        builtin: recipe.id.starts_with(BUILTIN_PREFIX),
+        builtin: is_builtin(&recipe.id),
         step_titles: actions.iter().map(Action::title).collect(),
         id: recipe.id,
         name: recipe.name,
         steps: recipe.steps,
+        output_dir: recipe.output_dir,
     }
 }
 
@@ -106,6 +142,34 @@ pub fn next_actions(path: String, steps: Vec<String>) -> Result<Vec<Action>, Str
     engine::next_actions(Path::new(&path), &steps)
 }
 
+/// "Custom…" entries the editor can offer after `steps`.
+#[tauri::command]
+pub fn next_custom_forms(path: String, steps: Vec<String>) -> Result<Vec<engine::params::CustomForm>, String> {
+    engine::next_custom_forms(Path::new(&path), &steps)
+}
+
+/// Checks that `step` can follow `steps` and returns it with its title.
+#[tauri::command]
+pub fn check_step(path: String, steps: Vec<String>, step: String) -> Result<Action, String> {
+    let mut all = steps;
+    all.push(step);
+    let (mut actions, _) = engine::plan_chain(Path::new(&path), &all)?;
+    Ok(actions.pop().expect("at least one step"))
+}
+
+/// Folder picker for a recipe's own "Save to", parented to the drawer.
+#[tauri::command]
+pub async fn pick_recipe_folder(app: AppHandle, window: tauri::WebviewWindow) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    app.dialog()
+        .file()
+        .set_title("Save this recipe's files to…")
+        .set_parent(&window)
+        .blocking_pick_folder()
+        .and_then(|f| f.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
 /// Creates (no `id`) or updates a custom recipe. Returns its id.
 #[tauri::command]
 pub fn save_recipe(
@@ -113,6 +177,7 @@ pub fn save_recipe(
     id: Option<String>,
     name: String,
     steps: Vec<String>,
+    output_dir: Option<String>,
 ) -> Result<String, String> {
     let name = name.trim();
     if name.is_empty() {
@@ -120,6 +185,12 @@ pub fn save_recipe(
     }
     if steps.is_empty() {
         return Err("Add at least one step".into());
+    }
+    let output_dir = output_dir.filter(|d| !d.trim().is_empty());
+    if let Some(dir) = &output_dir {
+        if !Path::new(dir).is_dir() {
+            return Err(format!("The folder {dir} doesn't exist"));
+        }
     }
     let mut custom = load_custom(&app);
     let id = match id {
@@ -133,6 +204,7 @@ pub fn save_recipe(
                 .ok_or("That recipe no longer exists")?;
             r.name = name.into();
             r.steps = steps;
+            r.output_dir = output_dir;
             id
         }
         None => {
@@ -141,7 +213,7 @@ pub fn save_recipe(
                 .map(|d| d.as_millis())
                 .unwrap_or_default();
             let id = format!("custom:{millis}");
-            custom.push(Recipe { id: id.clone(), name: name.into(), steps });
+            custom.push(Recipe { id: id.clone(), name: name.into(), steps, output_dir });
             id
         }
     };
@@ -175,9 +247,13 @@ pub async fn run_recipe(
         .ok_or("That recipe no longer exists")?;
     tauri::async_runtime::spawn_blocking(move || {
         let _job = crate::engine::jobs::begin(job_id.as_deref());
+        let _dir = engine::override_output_dir(recipe.output_dir.map(PathBuf::from));
         let report = |f: f32| crate::emit_progress(&app, &label, &path, f);
-        engine::run_chain(Path::new(&path), &recipe.steps, &report)
-            .map(|p| p.to_string_lossy().into_owned())
+        let input = Path::new(&path);
+        let out = engine::run_chain(input, &recipe.steps, &report)?;
+        let out = engine::naming::finish(input, out, true).map(|p| p.to_string_lossy().into_owned())?;
+        crate::suggest::record(&app, &path, &recipe.steps, &out);
+        Ok(out)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -186,6 +262,20 @@ pub async fn run_recipe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_recipe_files_still_load() {
+        let old = r#"[{"id":"custom:1","name":"Thumb","steps":["resize:25","convert:jpg"]}]"#;
+        let r: Vec<Recipe> = serde_json::from_str(old).unwrap();
+        assert_eq!(r[0].output_dir, None);
+        // Custom values chain like the fixed ones.
+        let steps = ["resize:w1280".to_string(), "compress:q62".to_string()];
+        let (actions, ext) = engine::plan_chain(Path::new("a.png"), &steps).unwrap();
+        assert_eq!(ext, "jpg");
+        assert_eq!(actions[0].title(), "Resize 1280 px wide");
+        let err = engine::plan_chain(Path::new("a.png"), &["resize:w0".to_string()]).unwrap_err();
+        assert_eq!(err, "Step 1: Width must be a whole number from 1 to 20000 px");
+    }
 
     #[test]
     fn builtins_are_valid_chains() {
@@ -197,5 +287,14 @@ mod tests {
                 r.name
             );
         }
+    }
+
+    #[test]
+    fn looks_up_by_id_short_id_or_name() {
+        let found = |q: &str| lookup(builtins(), q).map(|r| r.id);
+        assert_eq!(found("builtin:podcast").as_deref(), Some("builtin:podcast"));
+        assert_eq!(found("web-image").as_deref(), Some("builtin:web-image"));
+        assert_eq!(found("clip to gif").as_deref(), Some("builtin:clip-gif"));
+        assert_eq!(found("nope"), None);
     }
 }

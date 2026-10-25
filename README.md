@@ -22,6 +22,7 @@ Images, audio, video, PDFs, documents and spreadsheets, all on your machine.
 - [What it can convert](#what-it-can-convert)
 - [Recipes](#recipes)
 - [File actions and the shelf](#file-actions-and-the-shelf)
+- [Command line and watch folders](#command-line-and-watch-folders)
 - [Settings](#settings)
 - [Install](#install)
 - [Build from source](#build-from-source)
@@ -158,6 +159,63 @@ Every drop, including folders, also gets **File** actions:
   to drag out.
 - Shelves with items survive restarts.
 
+## Command line and watch folders
+
+The same actions and recipes also run without the drawer.
+
+### Command line
+
+`ferryfile` with a command runs it and exits. It doesn't start the tray app.
+
+```powershell
+ferryfile actions photo.heic                       # what can this file become?
+ferryfile convert *.png --to webp --out web        # convert, results in .\web
+ferryfile convert talk.mov --to mp3                # picks "Extract audio" for video
+ferryfile run-action resize:50 photo.jpg           # any action id from `actions`
+ferryfile recipes                                  # built-in and your saved recipes
+ferryfile recipe "Web-ready image" a.png b.png     # by name, or by id: web-image
+ferryfile convert scan.pdf --to docx --json        # machine-readable results
+```
+
+| Option | Effect |
+| --- | --- |
+| `--out <dir>`, `-o` | Save results in `<dir>` (created if needed). Default: next to each file |
+| `--json` | Print a JSON array with one entry per file: `input`, `output`, `status` (`ok` or `error`) and `error` |
+| `--help`, `--version` | Usage, version |
+
+The exit code is `0` when every file worked, `1` when any failed, and `2` for a
+usage mistake (unknown command, missing `--to`, no such recipe). Ctrl+C stops
+the current file and cleans up. Without `--out`, results go next to each input
+file, whatever **Save converted files** says in Settings.
+
+**On PATH:** the installer (and so winget) adds Ferryfile's folder to your
+user PATH, and removes it on uninstall. Scoop and npm add a `ferryfile`
+command as well. Open a new terminal after installing. With the portable zip,
+call `ferryfile.exe` by its full path.
+
+> `ferryfile.exe` is a windowed app, so a terminal that starts it directly
+> doesn't wait for it: the output prints after your prompt and `$LASTEXITCODE`
+> isn't set. In scripts, pipe the output (`ferryfile recipes | Out-String`) or
+> use `(Start-Process ferryfile -ArgumentList … -Wait -NoNewWindow -PassThru).ExitCode`.
+> The npm `ferryfile` command always waits and passes the exit code on.
+
+### Watch folders
+
+In **Settings → Watch folders**, add a folder and choose a recipe or action for
+it. Each new file that lands there (saved, downloaded, copied or moved in) runs
+through it automatically, and a Windows notification says how it went.
+
+- **Save to:** a `converted` folder inside the watched folder (the default),
+  the same folder, or a folder you choose.
+- A file is picked up once it's complete: Ferryfile waits until it stops
+  changing and no other app is still writing it. Partial downloads
+  (`.crdownload`, `.part`, …), temp files and hidden files are skipped.
+- Files the recipe doesn't fit are left alone, and so are the results
+  themselves, even when they're saved in the watched folder. Subfolders
+  aren't watched.
+- Files already in the folder when you add it aren't touched.
+- The switch on each folder pauses it without losing its setup.
+
 ## Settings
 
 Open **Settings…** from the tray menu or the ⚙ button in the drawer.
@@ -171,6 +229,7 @@ Open **Settings…** from the tray menu or the ⚙ button in the drawer.
 | Drawer hotkey | Any combo with Ctrl, Alt, Shift or Win (or a lone F-key); opens or closes the drawer any time. Default `Ctrl+Alt+Space` |
 | Shelves | Shake while dragging to open a shelf on/off, and how firm a shake it takes |
 | Save converted files | Next to the original, or in a folder you choose |
+| Watch folders | Folders whose new files run through a recipe or action, each with its own output choice and on/off switch |
 
 ## Install
 

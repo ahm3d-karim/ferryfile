@@ -1,0 +1,47 @@
+/* First-run walkthrough. Builds on settings.css (cards, rows, keycaps). */
+main { gap: 16px; user-select: none; }
+
+.welcome-head { display: flex; align-items: center; gap: 12px; }
+.welcome-head .logo {
+  display: grid; place-items: center; width: 40px; height: 40px; flex: none;
+  border-radius: var(--r-overlay); background: var(--accent); color: var(--on-accent);
+}
+.welcome-head h1 { margin: 0; font-family: var(--font-display); font-size: 20px; line-height: 28px; font-weight: 600; }
+.welcome-head p { margin: 0; font-size: 13px; color: var(--text-2); }
+
+/* The sample file: one big draggable row. */
+.sample-row { padding: 8px; }
+.sample {
+  flex: 1; display: flex; align-items: center; gap: 12px; padding: 8px;
+  background: var(--layer-2); border: 1px dashed var(--stroke-strong); border-radius: var(--r-control);
+  text-align: left; cursor: grab;
+}
+.sample:hover { border-color: var(--accent-text); }
+.sample .thumb {
+  display: grid; place-items: center; width: 40px; height: 40px; flex: none;
+  border-radius: var(--r-control); background: var(--control); color: var(--accent-text);
+}
+.sample .grip { color: var(--text-3); }
+
+.steps { margin: 0; padding: 0; list-style: none; }
+.steps .item { border-top: 1px solid var(--stroke); }
+.step { color: var(--text-3); }
+.step .item-title { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.step .hotkey { min-height: 0; padding: 0; border: none; }
+.step.active, .step.done { color: var(--text); }
+.num {
+  display: grid; place-items: center; width: 24px; height: 24px; flex: none;
+  border: 1px solid var(--stroke-strong); border-radius: 50%; font-size: 12px; font-weight: 600;
+}
+.step.active .num { border-color: var(--accent); color: var(--accent-text); }
+.step.done .num { border-color: transparent; background: var(--accent); color: var(--on-accent); }
+.step.done .num .icon { width: 14px; height: 14px; }
+
+.feedback { margin: 0; padding: 10px 12px; border: 1px solid var(--stroke); border-radius: var(--r-control); font-size: 13px; background: var(--layer); }
+.feedback.ok { background: var(--success-bg); }
+.feedback.warn { color: #f5b14c; }
+
+.tip { margin: 0; font-size: 12px; color: var(--text-3); }
+.tip b { font-weight: 600; color: var(--text-2); }
+
+footer .spacer { flex: 1; }
