@@ -317,6 +317,46 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Needs pdfium.dll, so opt-in: `cargo test -- --ignored`
+    #[test]
+    #[ignore]
+    fn splits_and_extracts_ranges() {
+        let dir = std::env::temp_dir().join(format!("ferryfile-ranges-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Six pages, each saying its number.
+        let markup = (1..=6).map(|n| format!("Page number {n}")).collect::<Vec<_>>().join("
+#pagebreak()
+");
+        let pdf = dir.join("doc.pdf");
+        std::fs::write(&pdf, super::super::typeset::typst_to_pdf(markup, &dir).unwrap()).unwrap();
+
+        let noop = |_: f32| {};
+        let pdfium = pdfium().unwrap();
+        let texts = |p: &Path| -> Vec<String> {
+            let doc = pdfium.load_pdf_from_file(p, None).unwrap();
+            let t = doc.pages().iter().map(|pg| pg.text().unwrap().all().trim().to_string()).collect();
+            t
+        };
+        assert_eq!(super::super::pdf_tools::page_count(&pdf).unwrap(), 6);
+
+        let one = crate::engine::run_action("extract:5,1-2", &pdf, &noop).unwrap();
+        assert_eq!(texts(&one), ["Page number 5", "Page number 1", "Page number 2"]);
+
+        let folder = crate::engine::run_action("split:1-2,4,5-", &pdf, &noop).unwrap();
+        let mut names: Vec<_> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        names.sort();
+        assert_eq!(names, ["doc-p1-2.pdf", "doc-p4.pdf", "doc-p5-6.pdf"]);
+        assert_eq!(texts(&folder.join("doc-p5-6.pdf")), ["Page number 5", "Page number 6"]);
+
+        // Past the end: an error, and no half-made folder left behind.
+        let err = crate::engine::run_action("split:2-9", &pdf, &noop).unwrap_err();
+        assert_eq!(err, "Page 9 is past the end (this PDF has 6 pages)");
+        assert!(!dir.join("doc-split (2)").exists());
+        drop(pdfium);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// A noisy photo-like PNG that doesn't compress well losslessly.
     fn noise_png(path: &Path, w: u32, h: u32) {
         let mut seed: u32 = 12345;

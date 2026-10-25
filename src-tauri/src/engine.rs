@@ -321,6 +321,37 @@ mod tests {
     }
 
     #[test]
+    fn edit_steps_validate_in_chains() {
+        // Values travel in the id; engines check them through parse_action.
+        let (actions, ext) = plan_chain(Path::new("clip.avi"), &ids(&["trim:5-12.5:precise", "scale:720"])).unwrap();
+        assert_eq!(ext, "mp4");
+        assert_eq!(actions[0].title(), "Trim 0:05.0–0:12.5 (precise)");
+        assert_eq!(plan_chain(Path::new("a.wav"), &ids(&["trim:1-", "convert:mp3"])).unwrap().1, "mp3");
+        let (actions, ext) = plan_chain(Path::new("a.jpg"), &ids(&["crop:16x9", "resize:50"])).unwrap();
+        assert_eq!((actions[0].title().as_str(), ext.as_str()), ("Crop 16:9, centred", "jpg"));
+        assert!(plan_chain(Path::new("a.png"), &ids(&["crop:0,0,640,480", "convert:webp"])).is_ok());
+        let (actions, ext) = plan_chain(Path::new("r.pdf"), &ids(&["extract:1-3,5", "rotate:right"])).unwrap();
+        assert_eq!((actions[0].title().as_str(), ext.as_str()), ("Extract pages 1–3, 5", "pdf"));
+        assert_eq!(plan_chain(Path::new("r.pdf"), &ids(&["split:1-3,8-"])).unwrap().1, FOLDER_EXT);
+
+        // Bad values, or the wrong kind of file, are refused.
+        for (file, step) in [
+            ("a.mp4", "trim:9-3"),
+            ("a.png", "trim:1-2"),
+            ("a.svg", "crop:1x1"),
+            ("a.png", "crop:0,0,0,5"),
+            ("a.mp4", "crop:1x1"),
+            ("r.pdf", "extract:3-1"),
+            ("r.pdf", "extract:1 - 3"), // ids use the canonical form only
+            ("a.png", "extract:1-3"),
+        ] {
+            assert!(plan_chain(Path::new(file), &ids(&[step])).is_err(), "{step} on {file}");
+        }
+        // Editing steps aren't listed as drawer buttons.
+        assert!(!list_actions(Path::new("a.mp4")).iter().any(|a| a.id.starts_with("trim:")));
+    }
+
+    #[test]
     fn chain_keeps_only_final_file() {
         let dir = std::env::temp_dir().join(format!("ferryfile-chain-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
