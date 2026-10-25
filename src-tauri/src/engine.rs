@@ -57,6 +57,12 @@ pub trait Engine: Send + Sync {
     fn output_ext(&self, action_id: &str, input: &Path) -> Option<String>;
     fn run(&self, action_id: &str, input: &Path, progress: Progress) -> Result<PathBuf, String>;
 
+    /// How many files a batch may run through this action at once. Engines
+    /// that drive a single-instance tool (pdfium, Office) keep the default.
+    fn max_parallel(&self, _action_id: &str, _input: &Path) -> usize {
+        1
+    }
+
     /// Actions that take several files at once and produce one output.
     fn combine_actions(&self, _inputs: &[PathBuf]) -> Vec<Action> {
         Vec::new()
@@ -128,6 +134,27 @@ pub fn run_action(action_id: &str, input: &Path, progress: Progress) -> Result<P
     let (engine, _) = find(action_id, input)
         .ok_or_else(|| format!("No engine can run '{action_id}' on this file"))?;
     engine.run(action_id, input, progress)
+}
+
+/// Half the logical CPUs (at least one): for engines that use one core per file.
+pub fn half_cpus() -> usize {
+    std::thread::available_parallelism().map(|n| n.get() / 2).unwrap_or(1).max(1)
+}
+
+/// How many files a batch can run through `steps` at once: the lowest limit
+/// of any step, following the format through the chain.
+pub fn parallel_limit(input: &Path, steps: &[String]) -> usize {
+    let mut current = PathBuf::from(format!("file.{}", ext_of(input)));
+    let mut limit = usize::MAX;
+    for step in steps {
+        let Some((engine, _)) = find(step, &current) else { return 1 };
+        limit = limit.min(engine.max_parallel(step, &current).max(1));
+        match engine.output_ext(step, &current) {
+            Some(ext) => current.set_extension(ext),
+            None => break,
+        };
+    }
+    if limit == usize::MAX { 1 } else { limit }
 }
 
 /// Checks that `steps` can run one after another starting from `input`'s
@@ -304,6 +331,16 @@ mod tests {
 
         let next = next_actions(Path::new("clip.mov"), &ids(&["audio:mp3"])).unwrap();
         assert!(next.iter().any(|a| a.id == "convert:flac"));
+    }
+
+    #[test]
+    fn batch_limits_follow_the_engine() {
+        assert_eq!(parallel_limit(Path::new("a.png"), &ids(&["convert:webp"])), half_cpus());
+        assert_eq!(parallel_limit(Path::new("a.mov"), &ids(&["convert:mp4"])), 1);
+        assert_eq!(parallel_limit(Path::new("a.wav"), &ids(&["convert:mp3"])), 2);
+        // A chain is as limited as its slowest step: video → audio is still video.
+        assert_eq!(parallel_limit(Path::new("a.mov"), &ids(&["audio:mp3", "convert:flac"])), 1);
+        assert_eq!(parallel_limit(Path::new("a.png"), &ids(&["nope"])), 1);
     }
 
     #[test]

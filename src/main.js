@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import { icon, hydrateIcons, iconForPath } from "./icons.js";
+import { createQueue, batchLimit } from "./queue.js";
 
 const $ = (id) => document.getElementById(id);
 const drawer = $("drawer");
@@ -111,9 +112,44 @@ $("infobar").addEventListener("pointerdown", (down) => {
 
 // ---------------------------------------------------------------- jobs
 
-// Jobs run one at a time; starting another while one runs queues it.
-const queue = []; // { label, job, targets }
-let running = null; // { label, index, count, jobId, cancelled, started }
+// Jobs run one at a time; starting another while one runs queues it. A job
+// on several files runs as a batch in the queue list, a few files at once.
+const queue = []; // { label, job, targets, steps }
+let running = null; // { label, index, count, jobId, cancelled, started, batch }
+let batchStarted = 0;
+
+const batchView = createQueue($("queue"), {
+  onChange(s) {
+    if (!running?.batch) return;
+    running.index = s.settled;
+    $("progress").value = s.fraction;
+    setInfo("busy", jobLabel());
+  },
+  // Also runs after Retry, when the batch itself has long finished.
+  onDone(_, s) {
+    if (running?.batch) running = null;
+    finishBatch(s);
+  },
+});
+
+function finishBatch(s) {
+  if (!s.total) return;
+  lastOutputs = batchView.outputs();
+  lastOutput = lastOutputs.at(-1) ?? null;
+  const skipped = s.skipped ? ` · ${s.skipped} not supported` : "";
+  let text;
+  if (s.failed) {
+    text = `${s.failed} of ${s.total} failed${s.done ? `, ${s.done} saved` : ""}${skipped}`;
+    setInfo("error", text);
+  } else if (s.cancelled) {
+    text = `Cancelled; ${s.done} of ${s.total} saved${skipped}`;
+    setInfo("info", text);
+  } else {
+    text = s.done ? `Saved ${s.done} file${s.done > 1 ? "s" : ""}${skipped}` : `Nothing to do${skipped}`;
+    setInfo(s.done ? "ok" : "info", text);
+  }
+  notifyIfAway(batchStarted, text);
+}
 
 listen("ferryfile-progress", (e) => {
   if (running) $("progress").value = (running.index + e.payload.fraction) / running.count;
@@ -121,15 +157,17 @@ listen("ferryfile-progress", (e) => {
 
 const jobLabel = () => {
   const more = queue.length ? ` · ${queue.length} more queued` : "";
+  if (running.batch) return `${running.label}: ${running.index} of ${running.count} finished…${more}`;
   return `${running.label}${running.count > 1 ? ` (${running.index + 1} of ${running.count})` : ""}…${more}`;
 };
 
 /**
  * Queues `job(path, jobId)` for every target (by default each dropped file);
- * each call gets a job id the Cancel button can stop.
+ * each call gets a job id the Cancel button can stop. `steps` (the action
+ * ids it runs) decide how many files of a batch run at once.
  */
-function runJob(label, job, targets = paths) {
-  queue.push({ label, job, targets: [...targets] });
+function runJob(label, job, targets = paths, steps = []) {
+  queue.push({ label, job, targets: [...targets], steps });
   if (running) setInfo("busy", jobLabel());
   else pump();
 }
@@ -144,6 +182,7 @@ function notifyIfAway(started, body) {
 async function pump() {
   const task = queue.shift();
   if (!task) return;
+  if (task.targets.length > 1) return pumpBatch(task);
   running = { label: task.label, index: 0, count: task.targets.length, jobId: null, cancelled: false, started: Date.now() };
   $("progress").value = 0;
   const results = [];
@@ -178,7 +217,23 @@ async function pump() {
   pump();
 }
 
+async function pumpBatch(task) {
+  await batchView.idle(); // a Retry may still be running
+  running = { label: task.label, index: 0, count: task.targets.length, jobId: null, cancelled: false, started: Date.now(), batch: true };
+  batchStarted = running.started;
+  $("progress").value = 0;
+  setInfo("busy", jobLabel());
+  const max = await batchLimit(task.targets[0], task.steps);
+  await batchView.run({ targets: task.targets, run: task.job, max });
+  pump();
+}
+
 $("info-cancel").addEventListener("click", () => {
+  if (batchView.busy()) {
+    queue.length = 0;
+    batchView.cancelAll();
+    return;
+  }
   if (!running) return;
   running.cancelled = true;
   queue.length = 0; // Cancel stops everything that was waiting, too
@@ -234,7 +289,7 @@ function group(heading, body) {
 }
 
 const runAction = (a) => () =>
-  runJob(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId }));
+  runJob(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId }), paths, [a.id]);
 
 // ---------------------------------------------------------------- render
 
@@ -335,7 +390,7 @@ async function renderRecipes() {
       const edit = r.builtin
         ? null
         : el("button", { type: "button", className: "icon-btn edit", title: "Edit recipe", ariaLabel: "Edit recipe", onclick: () => openEditor(r) }, [icon("edit")]);
-      return row(r.name, () => runJob(r.name, (p, jobId) => invoke("run_recipe", { id: r.id, path: p, jobId })), {
+      return row(r.name, () => runJob(r.name, (p, jobId) => invoke("run_recipe", { id: r.id, path: p, jobId }), paths, r.steps), {
         hint: r.stepTitles.join(" · "),
         search: `recipe ${r.name}`,
         extra: edit,
@@ -434,7 +489,10 @@ async function showFiles(dropped) {
   idle.hidden = paths.length > 0;
   content.hidden = paths.length === 0;
   closeEditor();
-  setInfo(null);
+  if (!batchView.busy()) {
+    batchView.clear();
+    setInfo(null);
+  }
   if (!paths.length) return;
 
   searchEl.value = "";
@@ -597,7 +655,10 @@ listen("ferryfile-drag-start", (e) => {
   paths = [];
   idle.hidden = false;
   content.hidden = true;
-  setInfo(null);
+  if (!batchView.busy()) {
+    batchView.clear();
+    setInfo(null);
+  }
   drawer.classList.add("open");
 });
 listen("ferryfile-drag-end", () => drawer.classList.remove("open", "hover"));
@@ -622,6 +683,7 @@ document.addEventListener("drop", (e) => {
   window.chrome.webview.postMessageWithAdditionalObjects("ferryfile-drop", files);
 });
 listen("ferryfile-dropped", async (e) => {
+  if (!e.payload.length) return; // only files without a path (from a browser)
   await showFiles(e.payload);
   // The drag is over: take keyboard focus so Enter and 1–9 work right away.
   invoke("focus_drawer");

@@ -50,12 +50,15 @@ pub fn install(window: &WebviewWindow) {
                 if let Ok(file) = objects.GetValueAtIndex(i)?.cast::<ICoreWebView2File>() {
                     let mut path = PWSTR::null();
                     file.Path(&mut path)?;
-                    paths.push(take_pwstr(path));
+                    let path = take_pwstr(path);
+                    // Browsers' virtual files have no path; the page saves those itself.
+                    if !path.is_empty() {
+                        paths.push(path);
+                    }
                 }
             }
-            if !paths.is_empty() {
-                let _ = app.emit_to(label.as_str(), DROPPED_EVENT, paths);
-            }
+            // Sent even when empty: the page reads files without a path itself.
+            let _ = app.emit_to(label.as_str(), DROPPED_EVENT, paths);
             Ok(())
         }));
         let mut token = 0i64;

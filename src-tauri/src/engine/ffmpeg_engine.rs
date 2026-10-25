@@ -337,6 +337,11 @@ fn run_ffmpeg(ff: &Ffmpeg, input: &Path, args: &[String], out: &Path, progress: 
 }
 
 impl Engine for FfmpegEngine {
+    /// ffmpeg already uses every core for video; audio encodes are light.
+    fn max_parallel(&self, _action_id: &str, input: &Path) -> usize {
+        if AUDIO_IN.contains(&ext_of(input).as_str()) { 2 } else { 1 }
+    }
+
     fn actions(&self, path: &Path) -> Vec<Action> {
         let ext = ext_of(path);
         let mut out = Vec::new();
