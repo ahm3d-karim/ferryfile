@@ -1,3 +1,4 @@
+pub mod cli;
 mod drag;
 mod dropbridge;
 mod engine;
@@ -9,6 +10,7 @@ mod settings;
 mod shake;
 mod shelf;
 mod tutorial;
+mod watch;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -181,6 +183,9 @@ pub fn run() {
             tutorial::tutorial_info,
             tutorial::tutorial_drag_started,
             tutorial::close_tutorial,
+            watch::watch_errors,
+            watch::watch_choices,
+            watch::pick_watch_folder,
         ])
         .setup(move |app| {
             settings::load(app.handle());

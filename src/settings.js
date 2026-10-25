@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { setupWatch, render as renderWatch } from "./settings-watch.js";
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -53,6 +54,7 @@ function render() {
   $("folder-card").hidden = !state.outputDir;
   $("folder-path").textContent = state.outputDir ?? "";
   $("about").textContent = `Ferryfile ${state.version}`;
+  renderWatch();
 }
 
 async function save() {
@@ -67,6 +69,7 @@ async function save() {
         outputDir: state.outputDir,
         shakeToShelf: state.shakeToShelf,
         shakeSensitivity: state.shakeSensitivity,
+        watchFolders: state.watchFolders,
       },
       autostart: state.autostart,
     });
@@ -78,6 +81,7 @@ async function save() {
     state = await invoke("get_settings");
   }
   render();
+setupWatch({ getState: () => state, save });
 }
 
 async function chooseFolder() {
@@ -132,6 +136,7 @@ async function onRecordKey(e) {
   if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
     await stopRecording();
     return render();
+setupWatch({ getState: () => state, save });
   }
   const mods = [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Super"].filter(Boolean);
   const key = keyName(e.code);
@@ -150,7 +155,9 @@ for (const r of Object.values(RECORDERS)) {
     const was = recording;
     if (was) await stopRecording();
     if (was === r) return render();
+setupWatch({ getState: () => state, save });
     render();
+setupWatch({ getState: () => state, save });
     recording = r;
     // Turn the drawer hotkey off meanwhile, so pressing it reaches this page.
     await invoke("pause_hotkey", { paused: true }).catch(() => {});
@@ -162,6 +169,7 @@ for (const r of Object.values(RECORDERS)) {
     if (recording === r) {
       await stopRecording();
       render();
+setupWatch({ getState: () => state, save });
     }
   });
   r.reset.title = `Back to ${r.fallback}`;
@@ -187,6 +195,7 @@ onSeg("output", async (v) => {
   if (v === "folder") {
     // Choosing "A folder I choose" asks for the folder right away.
     if (!state.outputDir && !(await chooseFolder())) return render();
+setupWatch({ getState: () => state, save });
   } else {
     state.outputDir = null;
   }
@@ -220,3 +229,4 @@ for (const [id, kind] of [["context-menu", "contextMenu"], ["send-to", "sendTo"]
   );
 }
 showIntegration();
+setupWatch({ getState: () => state, save });
