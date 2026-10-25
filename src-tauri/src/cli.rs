@@ -58,7 +58,8 @@ pub struct Invocation {
 }
 
 /// Arguments the tray app itself understands. Anything else is a CLI call.
-const GUI_ARGS: &[&str] = &[];
+/// `--open` comes from the Explorer right-click entry and Send to.
+const GUI_ARGS: &[&str] = &[crate::explorer::OPEN_FLAG];
 
 /// Reads `args` (without the program name). `Ok(None)` means: start the app.
 pub fn parse(args: &[String]) -> Result<Option<Invocation>, String> {
@@ -469,6 +470,13 @@ mod tests {
 
     fn p(args: &[&str]) -> Result<Option<Invocation>, String> {
         parse(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn explorer_open_flag_starts_the_app() {
+        // Even when the file is gone by the time Ferryfile starts.
+        assert!(p(&["--open", r"C:\missing\x.png"]).unwrap().is_none());
+        assert!(p(&["--open"]).unwrap().is_none());
     }
     fn cmd(args: &[&str]) -> Invocation {
         p(args).unwrap().expect("a CLI call")
