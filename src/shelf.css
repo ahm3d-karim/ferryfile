@@ -21,7 +21,7 @@ header { display: flex; align-items: center; gap: 2px; height: 40px; padding: 0 
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   border: 1.5px dashed var(--stroke-strong); border-radius: 6px; text-align: center;
 }
-#shelf.hover .empty { border-color: var(--accent-text); background: rgba(96, 205, 255, 0.06); }
+#shelf.hover .empty { border-color: var(--accent-text); background: rgba(94, 220, 198, 0.06); }
 .empty .drop { width: 26px; height: 26px; color: var(--accent-text); margin-bottom: 6px; }
 .empty p { margin: 0; font-weight: 600; }
 .empty .sub { font-size: 12px; line-height: 16px; color: var(--text-3); }

@@ -37,7 +37,7 @@ body { overflow: hidden; }
   border: 1.5px dashed var(--stroke-strong); border-radius: var(--r-overlay);
   text-align: center;
 }
-.drawer.hover .dropzone { border-color: var(--accent-text); background: rgba(96, 205, 255, 0.06); }
+.drawer.hover .dropzone { border-color: var(--accent-text); background: rgba(94, 220, 198, 0.06); }
 .dropzone .drop { width: 32px; height: 32px; color: var(--accent-text); margin-bottom: 8px; }
 .dropzone-title { margin: 0; font-family: var(--font-display); font-size: 20px; line-height: 28px; font-weight: 600; }
 .dropzone-sub { margin: 0; max-width: 240px; font-size: 12px; line-height: 16px; color: var(--text-3); }
