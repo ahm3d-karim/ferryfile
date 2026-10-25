@@ -626,3 +626,21 @@ listen("ferryfile-dropped", async (e) => {
   // The drag is over: take keyboard focus so Enter and 1–9 work right away.
   invoke("focus_drawer");
 });
+
+// Files sent from Explorer's right-click menu or Send to: shown like a drop.
+// Also checked once at load, in case they came in before this page did.
+let lastOpened = { paths: null, at: 0 };
+async function showOpened() {
+  const { side, paths: opened } = await invoke("take_opened_paths");
+  if (!opened.length) return;
+  document.body.classList.toggle("left", side === "left");
+  drawer.classList.add("open");
+  // Explorer starts one launch per selected file; a slow one can arrive a
+  // moment after the rest. Add it to what's showing instead of replacing it.
+  const late = paths === lastOpened.paths && Date.now() - lastOpened.at < 3000;
+  const all = late ? [...new Set([...paths, ...opened])] : opened;
+  lastOpened = { paths: all, at: Date.now() };
+  await showFiles(all);
+}
+// Listen first, then check: paths that land in between still get picked up.
+listen("ferryfile-opened", showOpened).then(showOpened);

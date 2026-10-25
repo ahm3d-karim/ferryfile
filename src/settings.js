@@ -199,3 +199,24 @@ $("folder-path").addEventListener("click", () => invoke("reveal", { path: state.
 $("config").addEventListener("click", () => invoke("reveal", { path: state.configDir }).catch(() => {}));
 
 render();
+
+// Explorer integration lives in the registry and the SendTo folder, not in
+// settings.json, so the switches read what's actually there.
+async function showIntegration(pending) {
+  try {
+    const now = await (pending ?? invoke("get_shell_integration"));
+    $("context-menu").checked = now.contextMenu;
+    $("send-to").checked = now.sendTo;
+    if (pending) statusEl.textContent = "";
+  } catch (err) {
+    statusEl.textContent = String(err);
+    statusEl.className = "error";
+    showIntegration();
+  }
+}
+for (const [id, kind] of [["context-menu", "contextMenu"], ["send-to", "sendTo"]]) {
+  $(id).addEventListener("change", (e) =>
+    showIntegration(invoke("set_shell_integration", { kind, enabled: e.target.checked })),
+  );
+}
+showIntegration();
