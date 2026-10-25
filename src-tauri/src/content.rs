@@ -212,9 +212,9 @@ pub fn read_clipboard() -> Result<Content, String> {
     let _open = clipboard_win::Clipboard::new_attempts(10).map_err(|e| format!("Couldn't open the clipboard: {e}"))?;
 
     if raw::is_format_avail(formats::CF_HDROP) {
-        let mut files = Vec::new();
-        if raw::get_file_list_path(&mut files).is_ok() && !files.is_empty() {
-            return Ok(Content::Files(files));
+        let mut files: Vec<String> = Vec::new();
+        if raw::get_file_list(&mut files).is_ok() && !files.is_empty() {
+            return Ok(Content::Files(files.into_iter().map(PathBuf::from).collect()));
         }
     }
 
