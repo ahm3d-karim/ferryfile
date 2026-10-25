@@ -1,12 +1,14 @@
 mod drag;
 mod dropbridge;
 mod engine;
+mod explorer;
 mod files;
 mod hotkey;
 mod recipes;
 mod settings;
 mod shake;
 mod shelf;
+mod tutorial;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -114,10 +116,19 @@ fn hide_drawer(app: tauri::AppHandle) {
 }
 
 pub fn run() {
+    // Started from the right-click menu or Send to: queue those files now, so
+    // other launches forwarded during startup land in the same drop.
+    let opened = explorer::queue(explorer::paths_from_args(&std::env::args().collect::<Vec<_>>()));
     tauri::Builder::default()
-        // Must come first: a second launch just opens settings in the running app.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            settings::open_settings(app.clone());
+        // Must come first: a second launch hands its files (from Explorer's
+        // right-click menu or Send to) to the running app, or opens settings.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let opened = explorer::paths_from_args(&args);
+            if opened.is_empty() {
+                settings::open_settings(app.clone());
+            } else {
+                explorer::receive(app, opened);
+            }
         }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -164,16 +175,23 @@ pub fn run() {
             recipes::save_recipe,
             recipes::delete_recipe,
             recipes::run_recipe,
+            explorer::take_opened_paths,
+            explorer::get_shell_integration,
+            explorer::set_shell_integration,
+            tutorial::tutorial_info,
+            tutorial::tutorial_drag_started,
+            tutorial::close_tutorial,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             settings::load(app.handle());
             app.manage(shelf::load(app.handle()));
 
             let show_shelves = MenuItem::with_id(app, "shelves", "Show shelves", true, None::<&str>)?;
             let new_shelf = MenuItem::with_id(app, "new-shelf", "New shelf", true, None::<&str>)?;
             let open_settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+            let show_tutorial = MenuItem::with_id(app, "tutorial", "Show tutorial", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Ferryfile", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_shelves, &new_shelf, &open_settings, &quit])?;
+            let menu = Menu::with_items(app, &[&show_shelves, &new_shelf, &open_settings, &show_tutorial, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Ferryfile")
@@ -189,6 +207,10 @@ pub fn run() {
                         tauri::async_runtime::spawn(async move { shelf::new_shelf(&app) });
                     }
                     "settings" => settings::open_settings(app.clone()),
+                    "tutorial" => {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move { tutorial::show(&app) });
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -209,6 +231,14 @@ pub fn run() {
             dropbridge::install(&drawer);
             drag::set_focusable(&drawer, false);
             drag::start(app.handle().clone());
+
+            explorer::repair();
+            // The tutorial waits for a plain launch.
+            if opened {
+                explorer::show_when_settled(app.handle());
+            } else {
+                tutorial::show_on_first_run(app.handle());
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

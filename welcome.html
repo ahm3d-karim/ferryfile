@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Welcome to Ferryfile</title>
+    <link rel="stylesheet" href="/src/fluent.css" />
+    <link rel="stylesheet" href="/src/settings.css" />
+    <link rel="stylesheet" href="/src/welcome.css" />
+  </head>
+  <body>
+    <main>
+      <header class="welcome-head">
+        <span class="logo" data-icon="app" data-icon-class="icon lg"></span>
+        <div>
+          <h1>Welcome to Ferryfile</h1>
+          <p>Convert files by dragging them. Try it once with this sample.</p>
+        </div>
+      </header>
+
+      <section>
+        <h2>Try it</h2>
+        <div class="group">
+          <div class="item sample-row">
+            <button type="button" id="sample" class="sample" title="Drag me">
+              <span class="thumb" data-icon="image" data-icon-class="icon lg"></span>
+              <span class="item-text">
+                <span class="item-title" id="sample-name">Ferryfile sample.png</span>
+                <span class="item-desc">Drag me</span>
+              </span>
+              <span class="grip" data-icon="dragOut"></span>
+            </button>
+          </div>
+          <ol class="steps">
+            <li class="item step" data-step="1">
+              <span class="num">1</span>
+              <span class="item-text">
+                <span class="item-title">Start dragging the sample</span>
+                <span class="item-desc">Keep holding the mouse button</span>
+              </span>
+            </li>
+            <li class="item step" data-step="2">
+              <span class="num">2</span>
+              <span class="item-text">
+                <span class="item-title" id="step-2-title">Press <span id="keys" class="hotkey"></span> while you drag</span>
+                <span class="item-desc" id="step-2-desc">Works in Explorer and anywhere else you drag files</span>
+              </span>
+            </li>
+            <li class="item step" data-step="3">
+              <span class="num">3</span>
+              <span class="item-text">
+                <span class="item-title">Drop it on the drawer</span>
+                <span class="item-desc" id="step-3-desc">It slides in from the right edge of the screen</span>
+              </span>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <p id="feedback" class="feedback" role="status" hidden></p>
+
+      <p class="tip">You can also right-click a file in Explorer and pick <b>Convert with Ferryfile</b>.</p>
+
+      <footer>
+        <button type="button" id="skip" class="link-btn">Skip</button>
+        <span class="spacer"></span>
+        <button type="button" id="done" class="btn accent" hidden>Done</button>
+      </footer>
+    </main>
+    <script type="module" src="/src/welcome.js"></script>
+  </body>
+</html>

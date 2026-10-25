@@ -409,6 +409,23 @@ fn drag_key_pressed(app: &AppHandle) {
     show_drawer(app);
 }
 
+/// Opens the drawer for the drag in progress, as the drag hotkey would.
+pub fn open_for_current_drag(app: &AppHandle) {
+    if DOWN.load(Ordering::Relaxed) {
+        drag_key_pressed(app);
+    }
+}
+
+/// Opens the drawer outside a drag, for files sent from Explorer's right-click
+/// menu or Send to. It stays open until closed and takes focus so keys work.
+pub fn show_opened(app: &AppHandle) {
+    show_drawer(app);
+    if let Some(w) = app.get_webview_window("drawer") {
+        set_focusable(&w, true);
+        let _ = w.set_focus();
+    }
+}
+
 /// The drawer hotkey toggles the drawer. Mid-drag it opens the drawer as a drop
 /// target (and the usual hide-after-drop applies); otherwise the drawer stays
 /// open until closed, and takes focus so Esc works.
