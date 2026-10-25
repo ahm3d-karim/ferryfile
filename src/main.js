@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import { icon, hydrateIcons, iconForPath } from "./icons.js";
 import { customForm } from "./custom.js";
+import { toolsFor, openTool, closeTool, isToolOpen, toolKeydown } from "./editing.js";
 
 const $ = (id) => document.getElementById(id);
 const drawer = $("drawer");
@@ -60,7 +61,7 @@ const VIDEO = ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv"];
 
 /** The action most people want for this file, if the engines offer it. */
 function preferredIds(path, multiple) {
-  if (multiple) return ["combine:pdf"];
+  if (multiple) return ["combine:pdf", "combine:video"];
   const e = ext(path);
   if (IMAGES.includes(e)) return e === "webp" ? ["convert:png"] : ["convert:webp", "convert:png"];
   if (AUDIO.includes(e)) return e === "mp3" ? ["convert:m4a"] : ["convert:mp3"];
@@ -303,9 +304,12 @@ async function renderActions() {
   if (pick) {
     const isCombine = combined.includes(pick);
     const verb = pick.group === "Convert" ? `Convert to ${pick.label}` : `${pick.group}: ${pick.label}`;
-    $("suggested-label").textContent = isCombine ? `Combine into ${pick.label.replace(/^One /, "one ")}` : verb;
+    $("suggested-label").textContent =
+      pick.id === "combine:video" ? "Merge videos" : isCombine ? `Combine into ${pick.label.replace(/^One /, "one ")}` : verb;
     suggestedBtn.dataset.search = `${verb} ${pick.id}`.toLowerCase();
-    suggestedRun = isCombine
+    suggestedRun = pick.id === "combine:video"
+      ? () => showTool("merge")
+      : isCombine
       ? () => {
           const all = [...paths]; // the files as they are now, even if the job waits in the queue
           runJob(`Combining ${all.length} files`, (_, jobId) => invoke("run_combine", { actionId: pick.id, paths: all, jobId }), [all[0]]);
@@ -320,6 +324,7 @@ async function renderActions() {
       .filter((a) => a !== pick)
       .map((a) =>
         row(a.label, () => {
+          if (a.id === "combine:video") return showTool("merge");
           const all = [...paths];
           runJob(`${a.group}: ${a.label}`, (_, jobId) => invoke("run_combine", { actionId: a.id, paths: all, jobId }), [all[0]]);
         }, {
@@ -327,6 +332,13 @@ async function renderActions() {
         }),
       );
     if (rows.length) sections.push(group("Combine", el("div", { className: "rows" }, rows)));
+  }
+
+  // Editing tools open an inline view (see editing.js).
+  const tools = toolsFor(paths);
+  if (tools.length) {
+    const rows = tools.map((t) => row(t.label, () => showTool(t.id), { hint: t.hint, search: `edit ${t.label} ${t.id}` }));
+    sections.push(group("Edit", el("div", { className: "rows" }, rows)));
   }
 
   // Short-label groups (Resize, Compress) become segmented controls, paired side by side.
@@ -488,7 +500,26 @@ function applySearch() {
   renumber();
 }
 
+/** Opens an editing view in place of the action list. */
+function showTool(id) {
+  closeEditor();
+  toolsEl.hidden = true;
+  openTool(id, {
+    paths: [...paths],
+    runJob,
+    saveRecipe: (step) => {
+      closeTool();
+      openEditor(null, [step]);
+    },
+    onClose: () => {
+      toolsEl.hidden = false;
+      applySearch();
+    },
+  });
+}
+
 async function showFiles(dropped) {
+  closeTool();
   paths = dropped;
   fileInfo = null;
   openCustom = null; // its node goes with the old groups
@@ -512,15 +543,16 @@ suggestedBtn.addEventListener("click", () => suggestedRun?.());
 let editing = null; // { id: string | null, steps: [{ id, title }], outputDir: string | null }
 let stepForms = []; // "Custom…" entries offered in the add-step list
 
-function openEditor(recipe) {
+/** `steps` pre-fills a new recipe, e.g. with a trim from the Trim view. */
+function openEditor(recipe, steps = []) {
   closeCustom();
   editing = {
     id: recipe?.id ?? null,
-    steps: recipe ? recipe.steps.map((id, i) => ({ id, title: recipe.stepTitles[i] })) : [],
+    steps: recipe ? recipe.steps.map((id, i) => ({ id, title: recipe.stepTitles[i] })) : [...steps],
     outputDir: recipe?.outputDir ?? null,
   };
   $("editor-title").textContent = recipe ? "Edit recipe" : "New recipe";
-  nameEl.value = recipe?.name ?? "";
+  nameEl.value = recipe?.name ?? steps[0]?.title ?? "";
   deleteBtn.hidden = !recipe;
   toolsEl.hidden = true;
   editor.hidden = false;
@@ -670,6 +702,14 @@ for (const input of [searchEl, nameEl]) {
 window.addEventListener("keydown", (e) => {
   const typing = e.target.matches("input, select, textarea");
   if (e.target.closest?.(".custom-form")) return; // the form handles Enter and Esc
+  if (isToolOpen()) {
+    if (e.key === "Escape") {
+      closeTool();
+      toolsEl.hidden = false;
+      applySearch();
+    } else toolKeydown(e);
+    return;
+  }
   if (editing) {
     if (e.key === "Escape") closeEditor();
     return;

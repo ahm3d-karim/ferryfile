@@ -13,7 +13,9 @@ mod doc_engine;
 mod docling_engine;
 mod ffmpeg_engine;
 mod image_engine;
+pub(crate) mod image_crop;
 mod image_meta;
+pub(crate) mod media_edit;
 pub mod jobs;
 mod msoffice_engine;
 pub mod naming;
@@ -22,7 +24,8 @@ pub mod params;
 mod pdf_docx;
 mod pdf_engine;
 mod pdf_layout;
-mod pdf_tools;
+pub(crate) mod pdf_tools;
+pub(crate) mod ranges;
 mod subtitle_engine;
 mod typeset;
 
@@ -68,6 +71,12 @@ pub trait Engine: Send + Sync {
     /// "Custom…" entries the drawer can offer for `path`.
     fn custom_forms(&self, _path: &Path) -> Vec<params::CustomForm> {
         Vec::new()
+    }
+    /// Actions whose id carries values set in an editing view, e.g.
+    /// `trim:1.5-10` or `crop:0,0,640,480`, so `actions` can't list them.
+    /// Returns the action when `action_id` is valid for `path`.
+    fn parse_action(&self, _action_id: &str, _path: &Path) -> Option<Action> {
+        None
     }
 
     /// Actions that take several files at once and produce one output.
@@ -133,9 +142,12 @@ pub fn run_combine(action_id: &str, inputs: &[PathBuf], progress: Progress) -> R
 fn find(action_id: &str, input: &Path) -> Result<(Box<dyn Engine>, Action), String> {
     let mut invalid = None;
     for e in engines() {
-        if let Some(action) = e.actions(input).into_iter().find(|a| a.id == action_id) {
+        let listed = e.actions(input).into_iter().find(|a| a.id == action_id);
+        // Values from an editing view (trim, crop, split…).
+        if let Some(action) = listed.or_else(|| e.parse_action(action_id, input)) {
             return Ok((e, action));
         }
+        // Values typed into a "Custom…" form (resize:w1280, compress:q62…).
         match e.custom_action(action_id, input) {
             Some(Ok(action)) => return Ok((e, action)),
             Some(Err(why)) => invalid = invalid.or(Some(why)),
@@ -392,6 +404,37 @@ mod tests {
 
         let next = next_actions(Path::new("clip.mov"), &ids(&["audio:mp3"])).unwrap();
         assert!(next.iter().any(|a| a.id == "convert:flac"));
+    }
+
+    #[test]
+    fn edit_steps_validate_in_chains() {
+        // Values travel in the id; engines check them through parse_action.
+        let (actions, ext) = plan_chain(Path::new("clip.avi"), &ids(&["trim:5-12.5:precise", "scale:720"])).unwrap();
+        assert_eq!(ext, "mp4");
+        assert_eq!(actions[0].title(), "Trim 0:05.0–0:12.5 (precise)");
+        assert_eq!(plan_chain(Path::new("a.wav"), &ids(&["trim:1-", "convert:mp3"])).unwrap().1, "mp3");
+        let (actions, ext) = plan_chain(Path::new("a.jpg"), &ids(&["crop:16x9", "resize:50"])).unwrap();
+        assert_eq!((actions[0].title().as_str(), ext.as_str()), ("Crop 16:9, centred", "jpg"));
+        assert!(plan_chain(Path::new("a.png"), &ids(&["crop:0,0,640,480", "convert:webp"])).is_ok());
+        let (actions, ext) = plan_chain(Path::new("r.pdf"), &ids(&["extract:1-3,5", "rotate:right"])).unwrap();
+        assert_eq!((actions[0].title().as_str(), ext.as_str()), ("Extract pages 1–3, 5", "pdf"));
+        assert_eq!(plan_chain(Path::new("r.pdf"), &ids(&["split:1-3,8-"])).unwrap().1, FOLDER_EXT);
+
+        // Bad values, or the wrong kind of file, are refused.
+        for (file, step) in [
+            ("a.mp4", "trim:9-3"),
+            ("a.png", "trim:1-2"),
+            ("a.svg", "crop:1x1"),
+            ("a.png", "crop:0,0,0,5"),
+            ("a.mp4", "crop:1x1"),
+            ("r.pdf", "extract:3-1"),
+            ("r.pdf", "extract:1 - 3"), // ids use the canonical form only
+            ("a.png", "extract:1-3"),
+        ] {
+            assert!(plan_chain(Path::new(file), &ids(&[step])).is_err(), "{step} on {file}");
+        }
+        // Editing steps aren't listed as drawer buttons.
+        assert!(!list_actions(Path::new("a.mp4")).iter().any(|a| a.id.starts_with("trim:")));
     }
 
     #[test]

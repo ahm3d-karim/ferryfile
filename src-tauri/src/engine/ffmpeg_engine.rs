@@ -6,15 +6,17 @@
 //! Foundation via `h264_mf`).
 
 use std::collections::{HashSet, VecDeque};
+use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use super::media_edit;
 use super::{ext_of, find_sidecar, output_path, tool_command, Action, Engine, Progress};
 
-const AUDIO_IN: &[&str] = &["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff", "aif", "wma"];
-const VIDEO_IN: &[&str] = &["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv"];
+pub(super) const AUDIO_IN: &[&str] = &["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff", "aif", "wma"];
+pub(super) const VIDEO_IN: &[&str] = &["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv"];
 /// Containers that commonly carry subtitle tracks.
 const SUBTITLED: &[&str] = &["mp4", "m4v", "mov", "mkv", "webm"];
 /// "Shrink to" targets for video, in MB (decimal, so they also fit MiB limits).
@@ -38,14 +40,14 @@ const VIDEO_OUT: &[(&str, &str)] = &[
 
 pub struct FfmpegEngine;
 
-struct Ffmpeg {
-    exe: PathBuf,
-    encoders: HashSet<String>,
+pub(super) struct Ffmpeg {
+    pub(super) exe: PathBuf,
+    pub(super) encoders: HashSet<String>,
 }
 
 impl Ffmpeg {
     /// First encoder from `prefs` that this build has.
-    fn pick(&self, prefs: &[&'static str]) -> Result<&'static str, String> {
+    pub(super) fn pick(&self, prefs: &[&'static str]) -> Result<&'static str, String> {
         prefs
             .iter()
             .copied()
@@ -53,12 +55,12 @@ impl Ffmpeg {
             .ok_or_else(|| format!("This ffmpeg build has none of: {}", prefs.join(", ")))
     }
 
-    fn h264(&self) -> Result<&'static str, String> {
+    pub(super) fn h264(&self) -> Result<&'static str, String> {
         self.pick(&["libx264", "h264_mf", "libopenh264", "mpeg4"])
     }
 }
 
-fn ffmpeg() -> Result<&'static Ffmpeg, String> {
+pub(super) fn ffmpeg() -> Result<&'static Ffmpeg, String> {
     static FFMPEG: OnceLock<Option<Ffmpeg>> = OnceLock::new();
     FFMPEG
         .get_or_init(|| {
@@ -93,7 +95,7 @@ fn audio_args(ff: &Ffmpeg, ext: &str) -> Result<Vec<String>, String> {
 }
 
 /// H.264 + AAC with an optional quality level (lower = better, x264 CRF scale).
-fn h264_args(ff: &Ffmpeg, crf: u32) -> Result<Vec<String>, String> {
+pub(super) fn h264_args(ff: &Ffmpeg, crf: u32) -> Result<Vec<String>, String> {
     let enc = ff.h264()?;
     let mut args = vec!["-c:v".into(), enc.into(), "-pix_fmt".into(), "yuv420p".into()];
     match enc {
@@ -257,7 +259,7 @@ fn fit_video(ff: &Ffmpeg, input: &Path, target: u64, suffix: &str, progress: Pro
 }
 
 /// Parses `HH:MM:SS.xx` into seconds.
-fn parse_timestamp(s: &str) -> Option<f64> {
+pub(super) fn parse_timestamp(s: &str) -> Option<f64> {
     let mut parts = s.trim().split(':');
     let h: f64 = parts.next()?.parse().ok()?;
     let m: f64 = parts.next()?.parse().ok()?;
@@ -266,9 +268,24 @@ fn parse_timestamp(s: &str) -> Option<f64> {
 }
 
 fn run_ffmpeg(ff: &Ffmpeg, input: &Path, args: &[String], out: &Path, progress: Progress) -> Result<(), String> {
+    let inputs = [OsString::from("-i"), input.as_os_str().to_owned()];
+    run_ffmpeg_with(ff, &inputs, args, out, None, progress)
+}
+
+/// Runs ffmpeg with input options `inputs` (each `-i` plus anything before
+/// it, like `-ss`) and output options `args`. Progress is measured against
+/// `total` seconds of output, else the first input's duration.
+pub(super) fn run_ffmpeg_with(
+    ff: &Ffmpeg,
+    inputs: &[OsString],
+    args: &[String],
+    out: &Path,
+    total: Option<f64>,
+    progress: Progress,
+) -> Result<(), String> {
     let mut child = tool_command(&ff.exe)
-        .args(["-hide_banner", "-nostdin", "-n", "-i"])
-        .arg(input)
+        .args(["-hide_banner", "-nostdin", "-n"])
+        .args(inputs)
         .args(args)
         .args(["-progress", "pipe:1", "-nostats"])
         .arg(out)
@@ -278,7 +295,7 @@ fn run_ffmpeg(ff: &Ffmpeg, input: &Path, args: &[String], out: &Path, progress: 
         .map_err(|e| format!("Could not start ffmpeg: {e}"))?;
 
     // stderr: grab the input duration and keep the tail for error messages.
-    let duration = Arc::new(Mutex::new(None::<f64>));
+    let duration = Arc::new(Mutex::new(total.filter(|t| *t > 0.0)));
     let tail = Arc::new(Mutex::new(VecDeque::<String>::new()));
     let stderr = child.stderr.take().unwrap();
     let (d, t) = (duration.clone(), tail.clone());
@@ -388,6 +405,7 @@ impl Engine for FfmpegEngine {
             ("convert" | "audio", ext) => Some(ext.to_string()),
             ("scale" | "compress" | "fitmb" | "fitkb", _) => Some("mp4".into()),
             ("subs", ext) => Some(ext.to_string()),
+            ("trim", arg) => media_edit::trim_ext(arg, _input),
             _ => None,
         }
     }
@@ -431,10 +449,37 @@ impl Engine for FfmpegEngine {
                     other => other.map(|_| out),
                 };
             }
+            "trim" => return media_edit::trim(ff, input, arg, progress),
             other => return Err(format!("Unknown action kind '{other}'")),
         };
         run_ffmpeg(ff, input, &args, &out, progress)?;
         Ok(out)
+    }
+
+    /// `trim:<start>-<end>[:precise]` in seconds, from the Trim view.
+    fn parse_action(&self, action_id: &str, path: &Path) -> Option<Action> {
+        let ext = ext_of(path);
+        if !AUDIO_IN.contains(&ext.as_str()) && !VIDEO_IN.contains(&ext.as_str()) {
+            return None;
+        }
+        let arg = action_id.strip_prefix("trim:")?;
+        let trim = media_edit::parse_trim(arg).ok()?;
+        Some(Action::new(action_id, &trim.label(), "Trim"))
+    }
+
+    fn combine_actions(&self, inputs: &[PathBuf]) -> Vec<Action> {
+        if inputs.len() >= 2 && inputs.iter().all(|p| VIDEO_IN.contains(&ext_of(p).as_str())) {
+            vec![Action::new("combine:video", "Merge videos", "Combine")]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn combine(&self, action_id: &str, inputs: &[PathBuf], progress: Progress) -> Result<PathBuf, String> {
+        if action_id != "combine:video" {
+            return Err(format!("Unknown action '{action_id}'"));
+        }
+        media_edit::merge(ffmpeg()?, inputs, progress)
     }
 }
 

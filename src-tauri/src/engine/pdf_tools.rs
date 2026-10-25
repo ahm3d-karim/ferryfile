@@ -1,5 +1,6 @@
 //! Page tools on an existing PDF: rotate, reverse, drop the first/last page,
-//! and compress by re-encoding oversized images. Each writes a new file.
+//! split or extract page ranges, and compress by re-encoding oversized
+//! images. Each writes a new file.
 //!
 //! Passwords aren't offered: pdfium-render 0.9.4 always saves with flags 0, so
 //! it can neither write an encrypted PDF nor strip security on save.
@@ -10,7 +11,7 @@ use std::path::{Path, PathBuf};
 use image::DynamicImage;
 use pdfium_render::prelude::*;
 
-use super::output_path;
+use super::{output_dir, output_path, ranges};
 use super::pdf_engine::pdfium;
 use super::Progress;
 
@@ -76,6 +77,64 @@ pub(super) fn drop_page(input: &Path, last: bool) -> Result<PathBuf, String> {
     let index = if last { count - 1 } else { 0 };
     doc.pages().get(index).map_err(err)?.delete().map_err(err)?;
     save(&doc, input, if last { "-no-last-page" } else { "-no-first-page" })
+}
+
+/// Number of pages in `input`.
+pub(crate) fn page_count(input: &Path) -> Result<u32, String> {
+    let pdfium = pdfium()?;
+    let doc = pdfium.load_pdf_from_file(input, None).map_err(err)?;
+    Ok(doc.pages().len() as u32)
+}
+
+/// Copies 1-based pages `range` of `src` onto the end of `doc`.
+fn copy_range(doc: &mut PdfDocument, src: &PdfDocument, range: &std::ops::RangeInclusive<u32>) -> Result<(), String> {
+    for page in range.clone() {
+        let at = doc.pages().len();
+        doc.pages_mut()
+            .copy_page_from_document(src, (page - 1) as PdfPageIndex, at)
+            .map_err(err)?;
+    }
+    Ok(())
+}
+
+/// One PDF holding the pages in `spec` (e.g. `1-3,5,8-`), in that order.
+pub(super) fn extract_pages(input: &Path, spec: &str, progress: Progress) -> Result<PathBuf, String> {
+    let pdfium = pdfium()?;
+    let src = pdfium.load_pdf_from_file(input, None).map_err(err)?;
+    let wanted = ranges::resolve(spec, src.pages().len() as u32)?;
+    let mut doc = pdfium.create_new_pdf().map_err(err)?;
+    for (i, range) in wanted.iter().enumerate() {
+        copy_range(&mut doc, &src, range)?;
+        progress((i + 1) as f32 / wanted.len() as f32);
+    }
+    save(&doc, input, "-extract")
+}
+
+/// A folder with one PDF per range in `spec`, named after the pages it holds.
+pub(super) fn split_ranges(input: &Path, spec: &str, progress: Progress) -> Result<PathBuf, String> {
+    let pdfium = pdfium()?;
+    let src = pdfium.load_pdf_from_file(input, None).map_err(err)?;
+    let wanted = ranges::resolve(spec, src.pages().len() as u32)?;
+    let dir = output_dir(input, "-split")?;
+    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("pages");
+    let result = (|| {
+        for (i, range) in wanted.iter().enumerate() {
+            let mut part = pdfium.create_new_pdf().map_err(err)?;
+            copy_range(&mut part, &src, range)?;
+            let name = if range.start() == range.end() {
+                format!("{stem}-p{}.pdf", range.start())
+            } else {
+                format!("{stem}-p{}-{}.pdf", range.start(), range.end())
+            };
+            part.save_to_file(&super::unique_in(&dir, &name)).map_err(err)?;
+            progress((i + 1) as f32 / wanted.len() as f32);
+        }
+        Ok(dir.clone())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    result
 }
 
 fn save(doc: &PdfDocument, input: &Path, suffix: &str) -> Result<PathBuf, String> {

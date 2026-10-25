@@ -1,0 +1,85 @@
+/* Editing views in the drawer (Trim, Crop, Merge, Split pages). They reuse
+   the recipe editor's layout (.editor, .field, .editor-buttons). */
+
+.tool-view { gap: 10px; }
+.tool-view .editor-buttons { margin-top: 2px; }
+.tool-note { margin: 0; font-size: 12px; line-height: 16px; color: var(--text-3); }
+.tool-note:empty { display: none; }
+.tool-note.error { color: var(--critical); }
+.tool-readout { font-size: 12px; line-height: 16px; color: var(--text-2); }
+
+.tool-grid { display: grid; gap: 8px; }
+.tool-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tool-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tool-grid .textbox { padding: 0 8px; font-variant-numeric: tabular-nums; }
+.tool-grid input[type="number"]::-webkit-inner-spin-button { display: none; }
+
+/* Segmented choice, as in Settings */
+.tool-view .seg { display: flex; padding: 2px; gap: 2px; background: var(--layer-2); border: 1px solid var(--stroke); border-radius: 6px; }
+.tool-view .seg label { position: relative; flex: 1; padding: 4px 6px; text-align: center; border-radius: var(--r-control); font-size: 12px; line-height: 18px; color: var(--text-2); white-space: nowrap; }
+.tool-view .seg label:hover { color: var(--text); background: var(--subtle-hover); }
+.tool-view .seg input { position: absolute; inset: 0; margin: 0; opacity: 0; }
+.tool-view .seg label:has(input:checked) { background: var(--control-hover); color: var(--text); box-shadow: inset 0 0 0 1px var(--stroke-strong); }
+.tool-view .seg label:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: 1px; }
+
+/* Toggle switch, as in Settings */
+.toggle-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--layer); border: 1px solid var(--stroke); border-radius: var(--r-control); }
+.toggle-row .item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; }
+.toggle-row .item-desc { font-size: 12px; line-height: 16px; color: var(--text-3); }
+.switch {
+  appearance: none; margin: 0; width: 40px; height: 20px; flex: none;
+  border: 1px solid var(--text-3); border-radius: 10px; background: transparent; position: relative;
+}
+.switch::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--text-2); transition: transform 0.15s, background 0.15s;
+}
+.switch:checked { background: var(--accent); border-color: var(--accent); }
+.switch:checked::before { transform: translateX(20px); background: var(--on-accent); }
+
+/* Trim ------------------------------------------------------------------- */
+.media { display: block; width: 100%; max-height: 190px; background: #000; border-radius: var(--r-control); }
+
+.timeline { position: relative; height: 36px; margin: 0 7px; touch-action: none; }
+.timeline.disabled { opacity: 0.4; pointer-events: none; }
+.tl-track { position: absolute; left: -7px; right: -7px; top: 6px; bottom: 6px; background: var(--layer-2); border: 1px solid var(--stroke); border-radius: var(--r-control); }
+.tl-keep { position: absolute; top: 6px; bottom: 6px; background: rgba(63, 208, 184, 0.22); border-top: 2px solid var(--accent); border-bottom: 2px solid var(--accent); }
+.tl-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); pointer-events: none; }
+.tl-handle {
+  position: absolute; top: 2px; bottom: 2px; width: 14px; margin-left: -7px;
+  background: var(--accent); border-radius: 3px; cursor: ew-resize;
+}
+.tl-handle::after { content: ""; position: absolute; left: 6px; top: 10px; bottom: 10px; width: 2px; background: rgba(0, 0, 0, 0.45); border-radius: 1px; }
+.tl-handle:hover { background: var(--accent-hover); }
+
+.transport { display: flex; align-items: center; gap: 6px; }
+.transport .spacer { flex: 1; }
+.transport .btn.small { padding: 0 8px; }
+.tl-clock { font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Crop ------------------------------------------------------------------- */
+.crop-stage { position: relative; margin: 0 auto; touch-action: none; user-select: none; cursor: crosshair; }
+.crop-img { display: block; width: 100%; height: 100%; border-radius: 2px; }
+.crop-rect {
+  position: absolute; cursor: move;
+  outline: 1px solid var(--accent); box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  /* Rule-of-thirds guides */
+  background:
+    linear-gradient(to right, transparent calc(33.33% - 0.5px), rgba(255, 255, 255, 0.35) 0 calc(33.33% + 0.5px), transparent 0 calc(66.67% - 0.5px), rgba(255, 255, 255, 0.35) 0 calc(66.67% + 0.5px), transparent 0),
+    linear-gradient(to bottom, transparent calc(33.33% - 0.5px), rgba(255, 255, 255, 0.35) 0 calc(33.33% + 0.5px), transparent 0 calc(66.67% - 0.5px), rgba(255, 255, 255, 0.35) 0 calc(66.67% + 0.5px), transparent 0);
+}
+.crop-stage { overflow: hidden; border-radius: 2px; }
+.crop-handle { position: absolute; width: 12px; height: 12px; background: var(--accent); border: 1px solid var(--on-accent); border-radius: 2px; }
+.crop-handle.nw { left: -1px; top: -1px; cursor: nwse-resize; }
+.crop-handle.ne { right: -1px; top: -1px; cursor: nesw-resize; }
+.crop-handle.sw { left: -1px; bottom: -1px; cursor: nesw-resize; }
+.crop-handle.se { right: -1px; bottom: -1px; cursor: nwse-resize; }
+
+/* Merge ------------------------------------------------------------------ */
+.tool-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; counter-reset: clip; }
+.tool-list li { display: flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 2px 0 10px; background: var(--layer); border: 1px solid var(--stroke); border-radius: var(--r-control); counter-increment: clip; }
+.tool-list li::before { content: counter(clip); color: var(--text-3); font-size: 12px; width: 16px; flex: none; }
+.tool-list li span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool-list .icon-btn { min-width: 28px; height: 28px; padding: 0; }
+.tool-list .icon-btn:disabled { opacity: 0.3; pointer-events: none; }
+.tool-list .icon-btn.up .icon { transform: rotate(180deg); }

@@ -1,6 +1,7 @@
 pub mod cli;
 mod drag;
 mod dropbridge;
+mod editing;
 mod engine;
 mod explorer;
 mod files;
@@ -199,6 +200,11 @@ pub fn run() {
             recipes::next_custom_forms,
             recipes::check_step,
             recipes::pick_recipe_folder,
+            editing::media_source,
+            editing::media_preview,
+            editing::crop_source,
+            editing::pdf_ranges,
+            editing::merge_plan,
         ])
         .setup(move |app| {
             settings::load(app.handle());
