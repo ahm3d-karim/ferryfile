@@ -1,45 +1,58 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { hydrateIcons } from "./icons.js";
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
 
-hydrateIcons();
-
 let state = await invoke("get_settings");
+
+// Segmented choices are radio groups: <div class="seg" data-field="…">.
+const seg = (field) => document.querySelector(`.seg[data-field="${field}"]`);
+function setSeg(field, value) {
+  const input = seg(field).querySelector(`input[value="${value}"]`);
+  if (input) input.checked = true;
+}
+function onSeg(field, fn) {
+  seg(field).addEventListener("change", (e) => fn(e.target.value));
+}
+
+// "Ctrl+Alt+Space" -> three keycaps.
+function showKeycaps(button, combo) {
+  const keys = showKeys(combo);
+  if (!keys) return (button.textContent = "None");
+  button.replaceChildren(
+    ...keys.split("+").map((k) => {
+      const cap = document.createElement("span");
+      cap.className = "cap";
+      cap.textContent = k;
+      return cap;
+    }),
+  );
+  button.setAttribute("aria-label", `${keys}. Click to change`);
+}
 
 function render() {
   $("autostart").checked = state.autostart;
-  $("autostart-state").textContent = state.autostart ? "On" : "Off";
-  $("side").value = state.drawerSide;
-  $("open-on").value = state.openOn;
-  $("open-desc").textContent =
-    state.openOn === "hotkey"
-      ? `Start dragging a file, then press ${showKeys(state.dragHotkey) || "your drag hotkey"}`
-      : "Slides in as soon as you drag a file from Explorer";
+  setSeg("drawerSide", state.drawerSide);
+  setSeg("openOn", state.openOn);
   $("delay-card").hidden = state.openOn !== "drag";
   $("drag-hotkey-card").hidden = state.openOn !== "hotkey";
-  $("delay").value = state.openDelayMs >= 1 ? "400" : "0";
+  setSeg("delay", state.openDelayMs >= 1 ? "400" : "0");
   for (const r of Object.values(RECORDERS)) {
+    r.reset.hidden = state[r.field] === r.fallback;
     if (recording === r) continue;
-    r.button.textContent = showKeys(state[r.field]) || "None";
+    showKeycaps(r.button, state[r.field]);
     r.button.classList.remove("recording");
   }
-  const desc = $("hotkey-desc");
-  const broken = state.hotkey && !state.hotkeyActive;
-  desc.textContent = broken
-    ? "Not working: another app is using this combo. Pick a different one."
-    : "Opens or closes the drawer any time";
-  desc.classList.toggle("warn", broken);
+  const warn = $("hotkey-desc");
+  warn.hidden = !(state.hotkey && !state.hotkeyActive);
+  warn.textContent = "Another app already uses this combo. Pick a different one.";
   $("shake").checked = state.shakeToShelf;
-  $("shake-state").textContent = state.shakeToShelf ? "On" : "Off";
-  $("sensitivity").value = state.shakeSensitivity;
-  $("sensitivity").disabled = !state.shakeToShelf;
-  $("output").value = state.outputDir ? "folder" : "next";
+  setSeg("shakeSensitivity", state.shakeSensitivity);
+  $("sensitivity-card").classList.toggle("off", !state.shakeToShelf);
+  setSeg("output", state.outputDir ? "folder" : "next");
   $("folder-card").hidden = !state.outputDir;
-  $("folder-path").textContent = state.outputDir ?? "Next to the original file";
-  $("about").textContent = `Ferryfile ${state.version} · settings in ${state.configDir}`;
+  $("folder-path").textContent = state.outputDir ?? "";
+  $("about").textContent = `Ferryfile ${state.version}`;
 }
 
 async function save() {
@@ -77,12 +90,12 @@ $("autostart").addEventListener("change", (e) => {
   state.autostart = e.target.checked;
   save();
 });
-$("side").addEventListener("change", (e) => {
-  state.drawerSide = e.target.value;
+onSeg("drawerSide", (v) => {
+  state.drawerSide = v;
   save();
 });
-$("open-on").addEventListener("change", (e) => {
-  state.openOn = e.target.value;
+onSeg("openOn", (v) => {
+  state.openOn = v;
   save();
 });
 
@@ -141,7 +154,7 @@ for (const r of Object.values(RECORDERS)) {
     recording = r;
     // Turn the drawer hotkey off meanwhile, so pressing it reaches this page.
     await invoke("pause_hotkey", { paused: true }).catch(() => {});
-    r.button.textContent = "Press keys… (Esc cancels)";
+    r.button.textContent = "Press keys · Esc cancels";
     r.button.classList.add("recording");
     window.addEventListener("keydown", onRecordKey, true);
   });
@@ -158,20 +171,20 @@ for (const r of Object.values(RECORDERS)) {
   });
 }
 
-$("delay").addEventListener("change", (e) => {
-  state.openDelayMs = Number(e.target.value);
+onSeg("delay", (v) => {
+  state.openDelayMs = Number(v);
   save();
 });
 $("shake").addEventListener("change", (e) => {
   state.shakeToShelf = e.target.checked;
   save();
 });
-$("sensitivity").addEventListener("change", (e) => {
-  state.shakeSensitivity = e.target.value;
+onSeg("shakeSensitivity", (v) => {
+  state.shakeSensitivity = v;
   save();
 });
-$("output").addEventListener("change", async (e) => {
-  if (e.target.value === "folder") {
+onSeg("output", async (v) => {
+  if (v === "folder") {
     // Choosing "A folder I choose" asks for the folder right away.
     if (!state.outputDir && !(await chooseFolder())) return render();
   } else {
@@ -182,6 +195,7 @@ $("output").addEventListener("change", async (e) => {
 $("pick").addEventListener("click", async () => {
   if (await chooseFolder()) save();
 });
-$("close").addEventListener("click", () => getCurrentWindow().hide());
+$("folder-path").addEventListener("click", () => invoke("reveal", { path: state.outputDir }).catch(() => {}));
+$("config").addEventListener("click", () => invoke("reveal", { path: state.configDir }).catch(() => {}));
 
 render();

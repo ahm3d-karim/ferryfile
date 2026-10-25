@@ -9,114 +9,112 @@
   </head>
   <body>
     <main>
-      <h1>Settings</h1>
+      <section>
+        <h2>Drawer</h2>
+        <div class="group">
+          <div class="item">
+            <span class="item-text"><span class="item-title" id="open-on-label">Opens when</span></span>
+            <div class="seg" role="radiogroup" aria-labelledby="open-on-label" data-field="openOn">
+              <label><input type="radio" name="openOn" value="hotkey" />You press a key</label>
+              <label><input type="radio" name="openOn" value="drag" />Any drag</label>
+            </div>
+          </div>
+          <div class="item sub" id="drag-hotkey-card">
+            <span class="item-text">
+              <span class="item-title">Key to press while dragging</span>
+              <span class="item-desc">Only caught mid-drag. Otherwise it types as usual.</span>
+            </span>
+            <span class="hotkey-wrap">
+              <button type="button" id="drag-hotkey-reset" class="link-btn">Reset</button>
+              <button type="button" id="drag-hotkey" class="hotkey"></button>
+            </span>
+          </div>
+          <div class="item sub" id="delay-card">
+            <span class="item-text">
+              <span class="item-title" id="delay-label">Wait before opening</span>
+              <span class="item-desc">A short pause cuts down on accidental opens</span>
+            </span>
+            <div class="seg" role="radiogroup" aria-labelledby="delay-label" data-field="delay">
+              <label><input type="radio" name="delay" value="0" />No</label>
+              <label><input type="radio" name="delay" value="400" />Briefly</label>
+            </div>
+          </div>
+          <div class="item">
+            <span class="item-text">
+              <span class="item-title">Show or hide any time</span>
+              <span class="item-desc warn" id="hotkey-desc" hidden></span>
+            </span>
+            <span class="hotkey-wrap">
+              <button type="button" id="hotkey-reset" class="link-btn">Reset</button>
+              <button type="button" id="hotkey" class="hotkey"></button>
+            </span>
+          </div>
+          <div class="item">
+            <span class="item-text"><span class="item-title" id="side-label">Screen edge</span></span>
+            <div class="seg" role="radiogroup" aria-labelledby="side-label" data-field="drawerSide">
+              <label><input type="radio" name="drawerSide" value="left" />Left</label>
+              <label><input type="radio" name="drawerSide" value="right" />Right</label>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <h2>General</h2>
-      <div class="card">
-        <span class="card-icon" data-icon="app"></span>
-        <label class="card-text" for="autostart">
-          <span class="card-title">Start with Windows</span>
-          <span class="card-desc">Keep Ferryfile ready in the tray after you sign in</span>
-        </label>
-        <span class="switch-wrap"><span id="autostart-state" class="switch-state"></span><input id="autostart" class="switch" type="checkbox" role="switch" /></span>
-      </div>
+      <section>
+        <h2>Shelves</h2>
+        <div class="group">
+          <label class="item" for="shake">
+            <span class="item-text">
+              <span class="item-title">Shake to open a shelf</span>
+              <span class="item-desc">Wiggle the cursor while dragging to park files</span>
+            </span>
+            <input id="shake" class="switch" type="checkbox" role="switch" />
+          </label>
+          <div class="item sub" id="sensitivity-card">
+            <span class="item-text"><span class="item-title" id="sensitivity-label">How hard to shake</span></span>
+            <div class="seg" role="radiogroup" aria-labelledby="sensitivity-label" data-field="shakeSensitivity">
+              <label><input type="radio" name="shakeSensitivity" value="gentle" />Gentle</label>
+              <label><input type="radio" name="shakeSensitivity" value="normal" />Normal</label>
+              <label><input type="radio" name="shakeSensitivity" value="firm" />Firm</label>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <h2>Drawer</h2>
-      <div class="card">
-        <span class="card-icon" data-icon="shelves"></span>
-        <label class="card-text" for="side">
-          <span class="card-title">Screen edge</span>
-          <span class="card-desc">Where the drawer slides in from</span>
-        </label>
-        <select id="side" class="combo">
-          <option value="right">Right</option>
-          <option value="left">Left</option>
-        </select>
-      </div>
-      <div class="card">
-        <span class="card-icon" data-icon="drop"></span>
-        <label class="card-text" for="open-on">
-          <span class="card-title">Open the drawer</span>
-          <span class="card-desc" id="open-desc"></span>
-        </label>
-        <select id="open-on" class="combo">
-          <option value="hotkey">When I press my drag hotkey</option>
-          <option value="drag">Whenever I drag a file</option>
-        </select>
-      </div>
-      <div class="card sub" id="delay-card">
-        <label class="card-text" for="delay">
-          <span class="card-title">When dragging</span>
-          <span class="card-desc">A short pause means fewer accidental opens</span>
-        </label>
-        <select id="delay" class="combo">
-          <option value="0">Right away</option>
-          <option value="400">After a short pause</option>
-        </select>
-      </div>
-      <div class="card sub" id="drag-hotkey-card">
-        <span class="card-text">
-          <span class="card-title">Drag hotkey</span>
-          <span class="card-desc">Only works while you're dragging a file. Other times the key types as usual.</span>
-        </span>
-        <span class="hotkey-wrap">
-          <button type="button" id="drag-hotkey" class="btn hotkey"></button>
-          <button type="button" id="drag-hotkey-reset" class="btn small">Reset</button>
-        </span>
-      </div>
-      <div class="card">
-        <span class="card-icon" data-icon="app"></span>
-        <span class="card-text">
-          <span class="card-title">Drawer hotkey</span>
-          <span class="card-desc" id="hotkey-desc">Opens or closes the drawer any time</span>
-        </span>
-        <span class="hotkey-wrap">
-          <button type="button" id="hotkey" class="btn hotkey"></button>
-          <button type="button" id="hotkey-reset" class="btn small">Reset</button>
-        </span>
-      </div>
+      <section>
+        <h2>Converted files</h2>
+        <div class="group">
+          <div class="item">
+            <span class="item-text"><span class="item-title" id="output-label">Save to</span></span>
+            <div class="seg" role="radiogroup" aria-labelledby="output-label" data-field="output">
+              <label><input type="radio" name="output" value="next" />Same folder</label>
+              <label><input type="radio" name="output" value="folder" />Another folder</label>
+            </div>
+          </div>
+          <div class="item sub" id="folder-card" hidden>
+            <button type="button" id="folder-path" class="path" title="Show in Explorer"></button>
+            <button type="button" id="pick" class="btn small">Change…</button>
+          </div>
+        </div>
+      </section>
 
-      <h2>Shelves</h2>
-      <div class="card">
-        <span class="card-icon" data-icon="pin"></span>
-        <label class="card-text" for="shake">
-          <span class="card-title">Shake to open a shelf</span>
-          <span class="card-desc">Shake the cursor side to side while dragging a file</span>
-        </label>
-        <span class="switch-wrap"><span id="shake-state" class="switch-state"></span><input id="shake" class="switch" type="checkbox" role="switch" /></span>
-      </div>
-      <div class="card sub" id="sensitivity-card">
-        <label class="card-text" for="sensitivity">
-          <span class="card-title">Shake sensitivity</span>
-        </label>
-        <select id="sensitivity" class="combo">
-          <option value="gentle">Gentle</option>
-          <option value="normal">Normal</option>
-          <option value="firm">Firm</option>
-        </select>
-      </div>
-
-      <h2>Converted files</h2>
-      <div class="card">
-        <span class="card-icon" data-icon="folder"></span>
-        <label class="card-text" for="output">
-          <span class="card-title">Save to</span>
-          <span class="card-desc" id="folder-path">Next to the original file</span>
-        </label>
-        <select id="output" class="combo">
-          <option value="next">Next to the original</option>
-          <option value="folder">A folder I choose</option>
-        </select>
-      </div>
-      <div class="card sub" id="folder-card" hidden>
-        <span class="card-text"><span class="card-title">Folder</span></span>
-        <button type="button" id="pick" class="btn">Choose folder…</button>
-      </div>
+      <section>
+        <h2>System</h2>
+        <div class="group">
+          <label class="item" for="autostart">
+            <span class="item-text">
+              <span class="item-title">Start with Windows</span>
+              <span class="item-desc">Waits in the tray so drags work right away</span>
+            </span>
+            <input id="autostart" class="switch" type="checkbox" role="switch" />
+          </label>
+        </div>
+      </section>
 
       <p id="status" role="status"></p>
       <footer>
         <span id="about"></span>
-        <button type="button" id="close" class="btn accent">Done</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" id="config" class="link-btn">Settings folder</button>
       </footer>
     </main>
     <script type="module" src="/src/settings.js"></script>

@@ -21,9 +21,9 @@
   --text-2: #c5c5c5;
   --text-3: #9d9d9d;           /* still 6:1 on --surface */
 
-  --accent: #4cc2ff;           /* fills (text on it is black) */
-  --accent-hover: #47b1e8;
-  --accent-text: #60cdff;      /* links, icons on dark */
+  --accent: #3fd0b8;           /* Ferryfile teal; text on it is black */
+  --accent-hover: #38bba5;
+  --accent-text: #5edcc6;      /* links, icons on dark */
   --on-accent: #000000;
 
   --success-bg: #393d1b;
