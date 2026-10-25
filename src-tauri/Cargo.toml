@@ -47,6 +47,13 @@ features = [
   "Win32_UI_WindowsAndMessaging",
   "Win32_System_LibraryLoader",
   "Win32_UI_Input_KeyboardAndMouse",
+  # Offline OCR (Windows.Media.Ocr)
+  "Foundation_Collections",
+  "Globalization",
+  "Graphics_Imaging",
+  "Media_Ocr",
+  "Storage_Streams",
+  "Win32_System_WinRT",
 ]
 
 [dev-dependencies]

@@ -78,6 +78,11 @@ fn all(app: &AppHandle) -> Vec<Recipe> {
     v
 }
 
+/// Steps of every recipe, built-in and custom (to skip suggesting a saved one).
+pub fn all_steps(app: &AppHandle) -> Vec<Vec<String>> {
+    all(app).into_iter().map(|r| r.steps).collect()
+}
+
 fn view(recipe: Recipe, actions: Vec<Action>) -> RecipeView {
     RecipeView {
         builtin: recipe.id.starts_with(BUILTIN_PREFIX),
@@ -176,8 +181,10 @@ pub async fn run_recipe(
     tauri::async_runtime::spawn_blocking(move || {
         let _job = crate::engine::jobs::begin(job_id.as_deref());
         let report = |f: f32| crate::emit_progress(&app, &label, &path, f);
-        engine::run_chain(Path::new(&path), &recipe.steps, &report)
-            .map(|p| p.to_string_lossy().into_owned())
+        let out = engine::run_chain(Path::new(&path), &recipe.steps, &report)
+            .map(|p| p.to_string_lossy().into_owned())?;
+        crate::suggest::record(&app, &path, &recipe.steps, &out);
+        Ok(out)
     })
     .await
     .map_err(|e| e.to_string())?

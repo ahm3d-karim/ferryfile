@@ -7,6 +7,7 @@ mod recipes;
 mod settings;
 mod shake;
 mod shelf;
+mod suggest;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -46,11 +47,36 @@ async fn run_action(
     tauri::async_runtime::spawn_blocking(move || {
         let _job = engine::jobs::begin(job_id.as_deref());
         let report = |f: f32| emit_progress(&app, &label, &path, f);
-        engine::run_action(&action_id, std::path::Path::new(&path), &report)
-            .map(|p| p.to_string_lossy().into_owned())
+        let out = engine::run_action(&action_id, std::path::Path::new(&path), &report)
+            .map(|p| p.to_string_lossy().into_owned())?;
+        suggest::record(&app, &path, std::slice::from_ref(&action_id), &out);
+        Ok(out)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Reads the text in an image (OCR) or PDF and puts it on the clipboard.
+#[tauri::command]
+async fn copy_text(path: String) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = engine::recognized_text(std::path::Path::new(&path))?;
+        let crlf = text.lines().collect::<Vec<_>>().join("\r\n");
+        clipboard_win::set_clipboard_string(&crlf).map_err(|e| e.to_string())?;
+        Ok(text.split_whitespace().count())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Opens Windows' language settings, where OCR languages are added.
+#[tauri::command]
+fn open_language_settings() -> Result<(), String> {
+    std::process::Command::new("explorer.exe")
+        .arg("ms-settings:regionlanguage")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -164,6 +190,10 @@ pub fn run() {
             recipes::save_recipe,
             recipes::delete_recipe,
             recipes::run_recipe,
+            suggest::recipe_suggestion,
+            suggest::dismiss_suggestion,
+            copy_text,
+            open_language_settings,
         ])
         .setup(|app| {
             settings::load(app.handle());

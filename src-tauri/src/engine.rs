@@ -16,10 +16,13 @@ mod image_engine;
 mod image_meta;
 pub mod jobs;
 mod msoffice_engine;
+mod ocr;
+mod ocr_engine;
 mod office_engine;
 mod pdf_docx;
 mod pdf_engine;
 mod pdf_layout;
+mod pdf_ocr;
 mod pdf_tools;
 mod subtitle_engine;
 mod typeset;
@@ -80,8 +83,11 @@ fn engines() -> Vec<Box<dyn Engine>> {
         Box::new(docling_engine::DoclingEngine),
         Box::new(archive_engine::ArchiveEngine),
         Box::new(subtitle_engine::SubtitleEngine),
+        Box::new(ocr_engine::OcrEngine),
     ]
 }
+
+pub use ocr_engine::recognized_text;
 
 pub fn ext_of(path: &Path) -> String {
     path.extension()

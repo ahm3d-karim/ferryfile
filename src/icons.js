@@ -37,6 +37,9 @@ const P = {
   add: '<path d="M12 5v14M5 12h14"/>',
   drop: '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
   dragOut: '<path d="M12 20V9M7.5 13.5L12 9l4.5 4.5"/><path d="M4 9V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3"/>',
+  // Steps joined into one: a recipe card with a spark.
+  recipe: '<path d="M5 4h9v16H5z"/><path d="M8 8h3M8 12h3M8 16h2"/><path d="M18.5 4v4M16.5 6h4M18 13v3M16.5 14.5h3"/>',
+  text: '<path d="M4 7V5h16v2M12 5v14M9 19h6"/>',
   search: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
 };
 

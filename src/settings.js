@@ -47,6 +47,7 @@ function render() {
   warn.hidden = !(state.hotkey && !state.hotkeyActive);
   warn.textContent = "Another app already uses this combo. Pick a different one.";
   $("shake").checked = state.shakeToShelf;
+  $("suggest-recipes").checked = state.suggestRecipes;
   setSeg("shakeSensitivity", state.shakeSensitivity);
   $("sensitivity-card").classList.toggle("off", !state.shakeToShelf);
   setSeg("output", state.outputDir ? "folder" : "next");
@@ -67,6 +68,7 @@ async function save() {
         outputDir: state.outputDir,
         shakeToShelf: state.shakeToShelf,
         shakeSensitivity: state.shakeSensitivity,
+        suggestRecipes: state.suggestRecipes,
       },
       autostart: state.autostart,
     });
@@ -177,6 +179,10 @@ onSeg("delay", (v) => {
 });
 $("shake").addEventListener("change", (e) => {
   state.shakeToShelf = e.target.checked;
+  save();
+});
+$("suggest-recipes").addEventListener("change", (e) => {
+  state.suggestRecipes = e.target.checked;
   save();
 });
 onSeg("shakeSensitivity", (v) => {

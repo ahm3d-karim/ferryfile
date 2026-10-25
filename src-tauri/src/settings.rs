@@ -55,6 +55,8 @@ pub struct Settings {
     /// Shaking the cursor mid-drag opens a new shelf at the cursor.
     pub shake_to_shelf: bool,
     pub shake_sensitivity: Sensitivity,
+    /// Offer to save action chains you repeat as recipes.
+    pub suggest_recipes: bool,
 }
 
 impl Default for Settings {
@@ -68,6 +70,7 @@ impl Default for Settings {
             output_dir: None,
             shake_to_shelf: true,
             shake_sensitivity: Sensitivity::Normal,
+            suggest_recipes: true,
         }
     }
 }
@@ -152,6 +155,9 @@ pub fn set_settings(app: AppHandle, settings: Settings, autostart: bool) -> Resu
     }
     let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    if !settings.suggest_recipes && current().suggest_recipes {
+        crate::suggest::clear(&app); // off means nothing is kept, either
+    }
     apply(settings);
     Ok(())
 }
