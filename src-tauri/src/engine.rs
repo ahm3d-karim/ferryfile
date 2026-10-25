@@ -194,7 +194,7 @@ pub fn parallel_limit(input: &Path, steps: &[String]) -> usize {
     let mut current = PathBuf::from(format!("file.{}", ext_of(input)));
     let mut limit = usize::MAX;
     for step in steps {
-        let Some((engine, _)) = find(step, &current) else { return 1 };
+        let Ok((engine, _)) = find(step, &current) else { return 1 };
         limit = limit.min(engine.max_parallel(step, &current).max(1));
         match engine.output_ext(step, &current) {
             Some(ext) => current.set_extension(ext),
@@ -340,7 +340,7 @@ pub fn with_output_dir<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
 
 /// Extension `action_id` produces from `input`, if some engine offers it.
 pub fn action_output_ext(action_id: &str, input: &Path) -> Option<String> {
-    let (engine, _) = find(action_id, input)?;
+    let (engine, _) = find(action_id, input).ok()?;
     engine.output_ext(action_id, input)
 }
 
