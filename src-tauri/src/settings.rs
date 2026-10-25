@@ -52,6 +52,10 @@ pub struct Settings {
     pub open_delay_ms: u32,
     /// Where converted files go; `None` = next to the original.
     pub output_dir: Option<String>,
+    /// How outputs are named, e.g. `{name}-{date}.{ext}`.
+    pub name_pattern: String,
+    /// Send the original to the Recycle Bin once its output is saved and checked.
+    pub replace_original: bool,
     /// Shaking the cursor mid-drag opens a new shelf at the cursor.
     pub shake_to_shelf: bool,
     pub shake_sensitivity: Sensitivity,
@@ -68,6 +72,8 @@ impl Default for Settings {
             drawer_side: Side::Right,
             open_delay_ms: 0,
             output_dir: None,
+            name_pattern: crate::engine::naming::DEFAULT_PATTERN.into(),
+            replace_original: false,
             shake_to_shelf: true,
             shake_sensitivity: Sensitivity::Normal,
             watch_folders: Vec::new(),
@@ -83,6 +89,7 @@ pub fn current() -> Settings {
 
 fn apply(settings: Settings) {
     crate::engine::set_output_dir(settings.output_dir.as_deref().map(PathBuf::from));
+    crate::engine::naming::set_rules(&settings.name_pattern, settings.replace_original);
     crate::drag::configure_shake(settings.shake_to_shelf, settings.shake_sensitivity);
     // The drag hotkey only matters when the drawer waits for it.
     let drag_key = (settings.open_on == OpenOn::Hotkey).then_some(settings.drag_hotkey.as_str());
@@ -144,6 +151,7 @@ pub fn set_settings(app: AppHandle, settings: Settings, autostart: bool) -> Resu
     if !settings.drag_hotkey.trim().is_empty() {
         crate::drag::parse_combo(&settings.drag_hotkey)?;
     }
+    crate::engine::naming::validate(&settings.name_pattern)?;
     if settings.hotkey != current().hotkey {
         if let Err(e) = crate::hotkey::register(&app, &settings.hotkey) {
             let _ = crate::hotkey::register(&app, &current().hotkey);
@@ -161,6 +169,21 @@ pub fn set_settings(app: AppHandle, settings: Settings, autostart: bool) -> Resu
     }
     apply(settings);
     Ok(())
+}
+
+#[derive(Serialize)]
+pub struct NamePreview {
+    action: String,
+    name: String,
+}
+
+/// Example output names for a naming pattern, or why it doesn't work.
+#[tauri::command]
+pub fn preview_names(pattern: String) -> Result<Vec<NamePreview>, String> {
+    Ok(crate::engine::naming::preview(&pattern)?
+        .into_iter()
+        .map(|(action, name)| NamePreview { action, name })
+        .collect())
 }
 
 #[tauri::command]

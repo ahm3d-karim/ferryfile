@@ -94,6 +94,26 @@
             <button type="button" id="folder-path" class="path" title="Show in Explorer"></button>
             <button type="button" id="pick" class="btn small">Change…</button>
           </div>
+          <div class="item">
+            <label class="item-text" for="name-pattern">
+              <span class="item-title">File names</span>
+              <span class="item-desc">Use {name} {ext} {action} {date} {n}</span>
+            </label>
+            <span class="pattern-wrap">
+              <button type="button" id="name-reset" class="link-btn">Reset</button>
+              <input id="name-pattern" class="textbox pattern" type="text" spellcheck="false" autocomplete="off" maxlength="120" />
+            </span>
+          </div>
+          <div class="item sub" id="name-preview-card">
+            <span class="item-text" id="name-preview" aria-live="polite"></span>
+          </div>
+          <label class="item" for="replace-original">
+            <span class="item-text">
+              <span class="item-title">Replace the original</span>
+              <span class="item-desc">Once the new file is saved and checked, the original goes to the Recycle Bin</span>
+            </span>
+            <input id="replace-original" class="switch" type="checkbox" role="switch" />
+          </label>
         </div>
       </section>
 

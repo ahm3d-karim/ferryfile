@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import { icon, hydrateIcons, iconForPath } from "./icons.js";
+import { customForm } from "./custom.js";
 
 const $ = (id) => document.getElementById(id);
 const drawer = $("drawer");
@@ -25,6 +26,7 @@ hydrateIcons();
 
 let paths = [];
 let suggestedRun = null;
+let fileInfo = null; // size and pixel dimensions of a single dropped file
 
 const basename = (p) => p.split(/[\\/]/).pop();
 const ext = (p) => (p.includes(".") ? p.split(".").pop().toLowerCase() : "");
@@ -54,6 +56,7 @@ const SHORT = { "compress:75": "Balanced", "compress:50": "Smallest" };
 
 const IMAGES = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff"];
 const AUDIO = ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff", "aif", "wma"];
+const VIDEO = ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv"];
 
 /** The action most people want for this file, if the engines offer it. */
 function preferredIds(path, multiple) {
@@ -236,13 +239,61 @@ function group(heading, body) {
 const runAction = (a) => () =>
   runJob(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId }));
 
+// ---------------------------------------------------------------- custom values
+
+let openCustom = null; // the inline "Custom…" form that's showing
+
+function closeCustom() {
+  openCustom?.remove();
+  openCustom = null;
+}
+
+/** Shows `form`'s inline editor after `anchor`; `onAction(action)` gets the checked step. */
+function showCustom(form, anchor, { steps = [], submitLabel, onAction }) {
+  const same = openCustom?.dataset.group === form.group && openCustom.previousElementSibling === anchor;
+  closeCustom();
+  if (same) return; // clicking "Custom…" again closes it
+  const node = customForm({
+    form,
+    info: paths.length === 1 ? fileInfo : null,
+    isVideo: VIDEO.includes(ext(paths[0])),
+    submitLabel,
+    onCancel: closeCustom,
+    onFocus: () => invoke("focus_drawer"),
+    onSubmit: async (id) => {
+      try {
+        const action = await invoke("check_step", { path: paths[0], steps, step: id });
+        closeCustom();
+        onAction(action);
+      } catch (err) {
+        return err;
+      }
+    },
+  });
+  if (!node) return;
+  node.dataset.group = form.group;
+  anchor.after(node);
+  openCustom = node;
+  invoke("focus_drawer").then(() => node.focusFirst());
+}
+
+const VERBS = { Resize: "Resize", Compress: "Compress", "Shrink to": "Shrink" };
+
 // ---------------------------------------------------------------- render
 
 async function renderActions() {
-  const [actions, combined] = await Promise.all([
+  const [actions, combined, forms] = await Promise.all([
     invoke("list_actions", { path: paths[0] }),
     paths.length > 1 ? invoke("combine_actions", { paths }) : [],
+    invoke("custom_forms", { path: paths[0] }),
   ]);
+  const formFor = (name) => forms.find((f) => f.group === name);
+  // Runs on every file, like the fixed choices.
+  const customRun = (form) => () => {
+    const anchor = groupsEl.querySelector(`[data-group="${CSS.escape(form.group)}"]`);
+    const top = anchor?.parentElement?.classList.contains("pair") ? anchor.parentElement : anchor;
+    showCustom(form, top, { submitLabel: VERBS[form.group] ?? "Run", onAction: (a) => runAction(a)() });
+  };
 
   // Suggested: the most likely action, on Enter.
   const all = [...combined, ...actions];
@@ -287,28 +338,32 @@ async function renderActions() {
 
   for (const [name, items] of Map.groupBy(actions, (a) => a.group)) {
     const shown = items.filter((a) => a !== pick);
-    if (!shown.length) continue;
+    const form = formFor(name);
+    if (!shown.length && !form) continue;
     const labels = shown.map((a) => SHORT[a.id] ?? a.label);
-    if (shown.length <= 4 && labels.every((l) => l.length <= 9) && name !== "Convert") {
-      pending.push(
-        group(
-          name,
-          segmented(
-            shown.map((a, i) => ({
-              label: labels[i],
-              title: `${a.group}: ${a.label}`,
-              search: `${a.group} ${a.label} ${labels[i]}`,
-              run: runAction(a),
-            })),
-          ),
-        ),
-      );
+    if (shown.length && shown.length <= 4 && labels.every((l) => l.length <= 9) && name !== "Convert") {
+      const buttons = shown.map((a, i) => ({
+        label: labels[i],
+        title: `${a.group}: ${a.label}`,
+        search: `${a.group} ${a.label} ${labels[i]}`,
+        run: runAction(a),
+      }));
+      const section = group(name, segmented(buttons));
+      if (form) {
+        // In the heading: a fourth segment wouldn't fit beside another group.
+        const b = el("button", { type: "button", className: "icon-btn small custom-btn", textContent: "Custom…", title: `${name}: type your own value`, onclick: customRun(form) });
+        b.dataset.search = `${name} custom own value`;
+        section.firstChild.append(el("span", { className: "spacer" }), b);
+      }
+      section.dataset.group = name;
+      pending.push(section);
       if (pending.length === 2) flushPair();
       continue;
     }
     flushPair();
     const heading = name === "Convert" ? "Convert to" : name;
     const rows = shown.map((a) => row(a.label, runAction(a), { search: `${a.group} ${a.label}` }));
+    if (form) rows.push(row("Custom…", customRun(form), { search: `${name} custom own value` }));
     const body = el("div", { className: "rows" }, rows.slice(0, 5));
     if (rows.length > 5) {
       const rest = rows.slice(5);
@@ -321,7 +376,9 @@ async function renderActions() {
       more.dataset.search = rest.map((r) => r.dataset.search).join(" ");
       body.append(more);
     }
-    sections.push(group(heading, body));
+    const section = group(heading, body);
+    section.dataset.group = name;
+    sections.push(section);
   }
   flushPair();
 
@@ -385,8 +442,10 @@ async function renderFileCard() {
   $("file-name").textContent = basename(p);
   $("file-name").title = p;
   $("file-meta").textContent = "";
+  fileInfo = null;
   try {
     const info = await invoke("file_info", { path: p });
+    fileInfo = info;
     const parts = [info.kind];
     if (info.isDir) parts.push(`${info.items ?? 0} items`);
     else parts.push(formatBytes(info.size));
@@ -419,11 +478,11 @@ function applySearch() {
   const q = searchEl.value.trim().toLowerCase();
   const match = (node) => !q || node.dataset.search?.includes(q);
   suggestedBtn.hidden = !suggestedRun || !match(suggestedBtn);
-  for (const node of toolsEl.querySelectorAll(".row, .segmented button, .tile")) {
+  for (const node of toolsEl.querySelectorAll(".row, .segmented button, .tile, .custom-btn")) {
     node.hidden = !match(node);
   }
   for (const section of toolsEl.querySelectorAll(".group")) {
-    const any = section.querySelector(".row:not([hidden]), .segmented button:not([hidden]), .tile:not([hidden])");
+    const any = section.querySelector(".row:not([hidden]), .segmented button:not([hidden]), .tile:not([hidden]), .custom-btn:not([hidden])");
     section.hidden = !any || (section.id === "recipes-group" && !recipeRows.children.length);
   }
   renumber();
@@ -431,6 +490,8 @@ function applySearch() {
 
 async function showFiles(dropped) {
   paths = dropped;
+  fileInfo = null;
+  openCustom = null; // its node goes with the old groups
   idle.hidden = paths.length > 0;
   content.hidden = paths.length === 0;
   closeEditor();
@@ -448,12 +509,15 @@ suggestedBtn.addEventListener("click", () => suggestedRun?.());
 
 // ---------------------------------------------------------------- editor
 
-let editing = null; // { id: string | null, steps: [{ id, title }] }
+let editing = null; // { id: string | null, steps: [{ id, title }], outputDir: string | null }
+let stepForms = []; // "Custom…" entries offered in the add-step list
 
 function openEditor(recipe) {
+  closeCustom();
   editing = {
     id: recipe?.id ?? null,
     steps: recipe ? recipe.steps.map((id, i) => ({ id, title: recipe.stepTitles[i] })) : [],
+    outputDir: recipe?.outputDir ?? null,
   };
   $("editor-title").textContent = recipe ? "Edit recipe" : "New recipe";
   nameEl.value = recipe?.name ?? "";
@@ -466,6 +530,7 @@ function openEditor(recipe) {
 }
 
 function closeEditor() {
+  closeCustom();
   editing = null;
   editor.hidden = true;
   toolsEl.hidden = false;
@@ -494,16 +559,29 @@ async function refreshEditor() {
     ),
   );
 
+  renderRecipeFolder();
   let next = [];
+  stepForms = [];
   editorError.textContent = "";
+  const steps = editing.steps.map((s) => s.id);
   try {
-    next = await invoke("next_actions", { path: paths[0], steps: editing.steps.map((s) => s.id) });
+    [next, stepForms] = await Promise.all([
+      invoke("next_actions", { path: paths[0], steps }),
+      invoke("next_custom_forms", { path: paths[0], steps }),
+    ]);
   } catch (err) {
     editorError.textContent = err;
   }
+  // Each group's "Custom…" entry sits right after its fixed choices.
+  const options = [];
+  for (const [name, items] of Map.groupBy(next, (a) => a.group)) {
+    options.push(...items.map((a) => el("option", { value: a.id, textContent: `${a.group} ${a.label}` })));
+    const i = stepForms.findIndex((f) => f.group === name);
+    if (i >= 0) options.push(el("option", { value: `form:${i}`, textContent: `${name} custom…` }));
+  }
   addStepEl.replaceChildren(
     el("option", { value: "", textContent: next.length ? "Add a step…" : "No further steps for this format" }),
-    ...next.map((a) => el("option", { value: a.id, textContent: `${a.group} ${a.label}` })),
+    ...options,
   );
   addStepEl.disabled = !next.length;
   saveBtn.disabled = !!editorError.textContent || !editing.steps.length;
@@ -512,14 +590,48 @@ async function refreshEditor() {
 addStepEl.addEventListener("change", () => {
   const opt = addStepEl.selectedOptions[0];
   if (!opt?.value) return;
+  if (opt.value.startsWith("form:")) {
+    addStepEl.value = "";
+    const form = stepForms[Number(opt.value.slice(5))];
+    showCustom(form, addStepEl, {
+      steps: editing.steps.map((s) => s.id),
+      submitLabel: "Add step",
+      onAction: (a) => {
+        editing.steps.push({ id: a.id, title: `${a.group} ${a.label}` });
+        refreshEditor();
+      },
+    });
+    return;
+  }
+  closeCustom();
   editing.steps.push({ id: opt.value, title: opt.textContent });
   refreshEditor();
+});
+
+// A recipe can save somewhere other than the "Save to" folder in Settings.
+function renderRecipeFolder() {
+  const dir = editing.outputDir;
+  $("recipe-folder").textContent = dir ?? "Same as Settings";
+  $("recipe-folder").title = dir ?? "Uses the Save to choice in Settings";
+  $("recipe-folder").classList.toggle("unset", !dir);
+  $("recipe-folder-clear").hidden = !dir;
+}
+$("recipe-folder-pick").addEventListener("click", async () => {
+  const dir = await invoke("pick_recipe_folder");
+  if (dir && editing) {
+    editing.outputDir = dir;
+    renderRecipeFolder();
+  }
+});
+$("recipe-folder-clear").addEventListener("click", () => {
+  editing.outputDir = null;
+  renderRecipeFolder();
 });
 
 editor.addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    await invoke("save_recipe", { id: editing.id, name: nameEl.value, steps: editing.steps.map((s) => s.id) });
+    await invoke("save_recipe", { id: editing.id, name: nameEl.value, steps: editing.steps.map((s) => s.id), outputDir: editing.outputDir });
   } catch (err) {
     editorError.textContent = err;
     return;
@@ -557,6 +669,7 @@ for (const input of [searchEl, nameEl]) {
 
 window.addEventListener("keydown", (e) => {
   const typing = e.target.matches("input, select, textarea");
+  if (e.target.closest?.(".custom-form")) return; // the form handles Enter and Esc
   if (editing) {
     if (e.key === "Escape") closeEditor();
     return;

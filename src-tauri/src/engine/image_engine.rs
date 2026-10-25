@@ -6,14 +6,15 @@ use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
 use image::DynamicImage;
 
+use super::params::{self, CustomForm, Resize};
 use super::{ext_of, image_meta, output_path, Action, Engine, Progress};
 
 const INPUTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif", "avif", "svg"];
 /// SVGs smaller than this (longest side, px) are scaled up when rasterised,
 /// so a 24 px icon doesn't become a 24 px PNG.
 const SVG_MIN_SIDE: f32 = 1024.0;
-/// "Shrink to" targets for photos, in KB (decimal), with their labels.
-const FIT_KB: &[(u64, &str)] = &[(1000, "1 MB"), (500, "500 KB"), (200, "200 KB")];
+/// "Shrink to" targets for photos, in KB (decimal).
+const FIT_KB: &[u64] = &[1000, 500, 200];
 /// Photo formats the `image` crate can't read: decoded with ffmpeg and
 /// written back as JPG, since nothing here can encode them.
 const VIA_FFMPEG: &[&str] = &["heic", "heif", "avif"];
@@ -262,13 +263,33 @@ impl Engine for ImageEngine {
         }
         out.push(Action::new("compress:75", "JPEG, quality 75", "Compress"));
         out.push(Action::new("compress:50", "JPEG, quality 50", "Compress"));
-        for (kb, label) in FIT_KB {
-            out.push(Action::new(&format!("fitkb:{kb}"), label, "Shrink to"));
+        for kb in FIT_KB {
+            out.push(Action::new(&format!("fitkb:{kb}"), &params::kb_label(*kb), "Shrink to"));
         }
         if STRIPPABLE.contains(&ext.as_str()) {
             out.push(Action::new("strip:meta", "Remove location & camera info", "Privacy"));
         }
         out
+    }
+
+    fn custom_action(&self, action_id: &str, path: &Path) -> Option<Result<Action, String>> {
+        let ext = ext_of(path);
+        if !INPUTS.contains(&ext.as_str()) || ext == "svg" {
+            return None;
+        }
+        params::image_action(action_id)
+    }
+
+    fn custom_forms(&self, path: &Path) -> Vec<CustomForm> {
+        let ext = ext_of(path);
+        if !INPUTS.contains(&ext.as_str()) || ext == "svg" {
+            return vec![];
+        }
+        vec![
+            CustomForm::new("Resize", "image-size"),
+            CustomForm::new("Compress", "quality"),
+            CustomForm::new("Shrink to", "target-size"),
+        ]
     }
 
     fn output_ext(&self, action_id: &str, input: &Path) -> Option<String> {
@@ -289,8 +310,8 @@ impl Engine for ImageEngine {
             return svg_to_pdf(input);
         }
         if kind == "fitkb" {
-            let kb: u64 = arg.parse().map_err(|_| "bad size")?;
-            let label = FIT_KB.iter().find(|(k, _)| *k == kb).map(|(_, l)| *l).unwrap_or("that size");
+            let kb = params::target_kb(arg)?;
+            let label = params::kb_label(kb);
             let target = kb * 1000;
             let size = std::fs::metadata(input).map_err(|e| e.to_string())?.len();
             if size <= target {
@@ -309,17 +330,16 @@ impl Engine for ImageEngine {
                 Ok(out)
             }
             "resize" => {
-                let pct: u32 = arg.parse().map_err(|_| "bad percentage")?;
-                let w = (img.width() * pct / 100).max(1);
-                let h = (img.height() * pct / 100).max(1);
+                let size = Resize::parse(arg)?;
+                let (w, h) = size.apply(img.width(), img.height())?;
                 let resized = img.resize_exact(w, h, FilterType::Lanczos3);
                 let ext = writable_ext(input);
-                let out = output_path(input, &format!("-{pct}pct"), &ext);
+                let out = output_path(input, &size.suffix(), &ext);
                 prepare_for(&ext, resized).save(&out).map_err(|e| e.to_string())?;
                 Ok(out)
             }
             "compress" => {
-                let quality: u8 = arg.parse().map_err(|_| "bad quality")?;
+                let quality = params::quality(arg)?;
                 let out = output_path(input, "-compressed", "jpg");
                 let file = File::create(&out).map_err(|e| e.to_string())?;
                 let rgb = flatten_on_white(img);

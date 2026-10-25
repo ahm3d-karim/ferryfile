@@ -16,6 +16,9 @@ pub struct Recipe {
     pub name: String,
     /// Action ids, run in order.
     pub steps: Vec<String>,
+    /// Saves here instead of the "Save to" folder in Settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_dir: Option<String>,
 }
 
 /// What the drawer gets: a recipe that applies to the dropped file.
@@ -27,6 +30,7 @@ pub struct RecipeView {
     pub steps: Vec<String>,
     pub step_titles: Vec<String>,
     pub builtin: bool,
+    pub output_dir: Option<String>,
 }
 
 const BUILTIN_PREFIX: &str = "builtin:";
@@ -36,6 +40,7 @@ fn builtins() -> Vec<Recipe> {
         id: format!("{BUILTIN_PREFIX}{id}"),
         name: name.into(),
         steps: steps.iter().map(|s| s.to_string()).collect(),
+        output_dir: None,
     };
     vec![
         r("web-image", "Web-ready image", &["resize:50", "convert:webp"]),
@@ -110,6 +115,7 @@ fn view(recipe: Recipe, actions: Vec<Action>) -> RecipeView {
         id: recipe.id,
         name: recipe.name,
         steps: recipe.steps,
+        output_dir: recipe.output_dir,
     }
 }
 
@@ -131,6 +137,34 @@ pub fn next_actions(path: String, steps: Vec<String>) -> Result<Vec<Action>, Str
     engine::next_actions(Path::new(&path), &steps)
 }
 
+/// "Custom…" entries the editor can offer after `steps`.
+#[tauri::command]
+pub fn next_custom_forms(path: String, steps: Vec<String>) -> Result<Vec<engine::params::CustomForm>, String> {
+    engine::next_custom_forms(Path::new(&path), &steps)
+}
+
+/// Checks that `step` can follow `steps` and returns it with its title.
+#[tauri::command]
+pub fn check_step(path: String, steps: Vec<String>, step: String) -> Result<Action, String> {
+    let mut all = steps;
+    all.push(step);
+    let (mut actions, _) = engine::plan_chain(Path::new(&path), &all)?;
+    Ok(actions.pop().expect("at least one step"))
+}
+
+/// Folder picker for a recipe's own "Save to", parented to the drawer.
+#[tauri::command]
+pub async fn pick_recipe_folder(app: AppHandle, window: tauri::WebviewWindow) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    app.dialog()
+        .file()
+        .set_title("Save this recipe's files to…")
+        .set_parent(&window)
+        .blocking_pick_folder()
+        .and_then(|f| f.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
 /// Creates (no `id`) or updates a custom recipe. Returns its id.
 #[tauri::command]
 pub fn save_recipe(
@@ -138,6 +172,7 @@ pub fn save_recipe(
     id: Option<String>,
     name: String,
     steps: Vec<String>,
+    output_dir: Option<String>,
 ) -> Result<String, String> {
     let name = name.trim();
     if name.is_empty() {
@@ -145,6 +180,12 @@ pub fn save_recipe(
     }
     if steps.is_empty() {
         return Err("Add at least one step".into());
+    }
+    let output_dir = output_dir.filter(|d| !d.trim().is_empty());
+    if let Some(dir) = &output_dir {
+        if !Path::new(dir).is_dir() {
+            return Err(format!("The folder {dir} doesn't exist"));
+        }
     }
     let mut custom = load_custom(&app);
     let id = match id {
@@ -158,6 +199,7 @@ pub fn save_recipe(
                 .ok_or("That recipe no longer exists")?;
             r.name = name.into();
             r.steps = steps;
+            r.output_dir = output_dir;
             id
         }
         None => {
@@ -166,7 +208,7 @@ pub fn save_recipe(
                 .map(|d| d.as_millis())
                 .unwrap_or_default();
             let id = format!("custom:{millis}");
-            custom.push(Recipe { id: id.clone(), name: name.into(), steps });
+            custom.push(Recipe { id: id.clone(), name: name.into(), steps, output_dir });
             id
         }
     };
@@ -200,9 +242,11 @@ pub async fn run_recipe(
         .ok_or("That recipe no longer exists")?;
     tauri::async_runtime::spawn_blocking(move || {
         let _job = crate::engine::jobs::begin(job_id.as_deref());
+        let _dir = engine::override_output_dir(recipe.output_dir.map(PathBuf::from));
         let report = |f: f32| crate::emit_progress(&app, &label, &path, f);
-        engine::run_chain(Path::new(&path), &recipe.steps, &report)
-            .map(|p| p.to_string_lossy().into_owned())
+        let input = Path::new(&path);
+        let out = engine::run_chain(input, &recipe.steps, &report)?;
+        engine::naming::finish(input, out, true).map(|p| p.to_string_lossy().into_owned())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -211,6 +255,20 @@ pub async fn run_recipe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_recipe_files_still_load() {
+        let old = r#"[{"id":"custom:1","name":"Thumb","steps":["resize:25","convert:jpg"]}]"#;
+        let r: Vec<Recipe> = serde_json::from_str(old).unwrap();
+        assert_eq!(r[0].output_dir, None);
+        // Custom values chain like the fixed ones.
+        let steps = ["resize:w1280".to_string(), "compress:q62".to_string()];
+        let (actions, ext) = engine::plan_chain(Path::new("a.png"), &steps).unwrap();
+        assert_eq!(ext, "jpg");
+        assert_eq!(actions[0].title(), "Resize 1280 px wide");
+        let err = engine::plan_chain(Path::new("a.png"), &["resize:w0".to_string()]).unwrap_err();
+        assert_eq!(err, "Step 1: Width must be a whole number from 1 to 20000 px");
+    }
 
     #[test]
     fn builtins_are_valid_chains() {

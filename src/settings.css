@@ -79,3 +79,12 @@ label.item:hover { background: var(--subtle-hover); }
 #status:empty { display: none; }
 #status.error { color: var(--critical); }
 footer { margin-top: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
+
+/* File-name pattern with a live preview */
+.pattern-wrap { display: inline-flex; align-items: center; gap: 10px; flex: none; }
+.textbox.pattern { width: 200px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+.textbox.pattern.invalid { border-bottom-color: var(--critical); }
+#name-preview { gap: 2px; }
+.preview-row { font-size: 12px; line-height: 16px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview-row b { font-weight: 400; color: var(--text); }
+.preview-row.error { color: var(--critical); white-space: normal; }

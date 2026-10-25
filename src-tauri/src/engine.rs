@@ -16,7 +16,9 @@ mod image_engine;
 mod image_meta;
 pub mod jobs;
 mod msoffice_engine;
+pub mod naming;
 mod office_engine;
+pub mod params;
 mod pdf_docx;
 mod pdf_engine;
 mod pdf_layout;
@@ -56,6 +58,17 @@ pub trait Engine: Send + Sync {
     /// Extension of the file `action_id` produces from `input`.
     fn output_ext(&self, action_id: &str, input: &Path) -> Option<String>;
     fn run(&self, action_id: &str, input: &Path, progress: Progress) -> Result<PathBuf, String>;
+
+    /// An action with a value someone typed in (e.g. `resize:w1280`) that
+    /// `actions` doesn't list. `None` = not this engine's; `Some(Err)` = its
+    /// kind, but the value is out of range.
+    fn custom_action(&self, _action_id: &str, _path: &Path) -> Option<Result<Action, String>> {
+        None
+    }
+    /// "Custom…" entries the drawer can offer for `path`.
+    fn custom_forms(&self, _path: &Path) -> Vec<params::CustomForm> {
+        Vec::new()
+    }
 
     /// Actions that take several files at once and produce one output.
     fn combine_actions(&self, _inputs: &[PathBuf]) -> Vec<Action> {
@@ -117,16 +130,33 @@ pub fn run_combine(action_id: &str, inputs: &[PathBuf], progress: Progress) -> R
 }
 
 /// The engine offering `action_id` for `input`, plus the action itself.
-fn find(action_id: &str, input: &Path) -> Option<(Box<dyn Engine>, Action)> {
-    engines().into_iter().find_map(|e| {
-        let action = e.actions(input).into_iter().find(|a| a.id == action_id)?;
-        Some((e, action))
-    })
+fn find(action_id: &str, input: &Path) -> Result<(Box<dyn Engine>, Action), String> {
+    let mut invalid = None;
+    for e in engines() {
+        if let Some(action) = e.actions(input).into_iter().find(|a| a.id == action_id) {
+            return Ok((e, action));
+        }
+        match e.custom_action(action_id, input) {
+            Some(Ok(action)) => return Ok((e, action)),
+            Some(Err(why)) => invalid = invalid.or(Some(why)),
+            None => {}
+        }
+    }
+    Err(invalid.unwrap_or_else(|| format!("No engine can run '{action_id}' on a .{} file", ext_of(input))))
+}
+
+/// "Custom…" entries for the groups of `path`'s actions.
+pub fn custom_forms(path: &Path) -> Vec<params::CustomForm> {
+    let mut seen = std::collections::HashSet::new();
+    engines()
+        .iter()
+        .flat_map(|e| e.custom_forms(path))
+        .filter(|f| seen.insert(f.group.clone()))
+        .collect()
 }
 
 pub fn run_action(action_id: &str, input: &Path, progress: Progress) -> Result<PathBuf, String> {
-    let (engine, _) = find(action_id, input)
-        .ok_or_else(|| format!("No engine can run '{action_id}' on this file"))?;
+    let (engine, _) = find(action_id, input)?;
     engine.run(action_id, input, progress)
 }
 
@@ -136,8 +166,12 @@ pub fn plan_chain(input: &Path, steps: &[String]) -> Result<(Vec<Action>, String
     let mut current = PathBuf::from(format!("file.{}", ext_of(input)));
     let mut actions = Vec::with_capacity(steps.len());
     for (i, step) in steps.iter().enumerate() {
-        let (engine, action) = find(step, &current).ok_or_else(|| {
-            format!("Step {} ({step}) can't run on a .{} file", i + 1, ext_of(&current))
+        let (engine, action) = find(step, &current).map_err(|why| {
+            if why.starts_with("No engine") {
+                format!("Step {} ({step}) can't run on a .{} file", i + 1, ext_of(&current))
+            } else {
+                format!("Step {}: {why}", i + 1)
+            }
         })?;
         let ext = engine
             .output_ext(step, &current)
@@ -152,6 +186,12 @@ pub fn plan_chain(input: &Path, steps: &[String]) -> Result<(Vec<Action>, String
 pub fn next_actions(input: &Path, steps: &[String]) -> Result<Vec<Action>, String> {
     let (_, ext) = plan_chain(input, steps)?;
     Ok(list_actions(Path::new(&format!("file.{ext}"))))
+}
+
+/// "Custom…" entries for a step after `steps`.
+pub fn next_custom_forms(input: &Path, steps: &[String]) -> Result<Vec<params::CustomForm>, String> {
+    let (_, ext) = plan_chain(input, steps)?;
+    Ok(custom_forms(Path::new(&format!("file.{ext}"))))
 }
 
 /// Runs `steps` in order, feeding each output into the next step. Only the
@@ -199,6 +239,24 @@ pub fn output_path(input: &Path, suffix: &str, ext: &str) -> PathBuf {
 
 static OUTPUT_DIR: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
 
+thread_local! {
+    /// A recipe's own output folder, for the job running on this thread.
+    static OUTPUT_OVERRIDE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Sends this thread's outputs to `dir` (if it exists) instead of the global
+/// folder, until the guard is dropped.
+pub fn override_output_dir(dir: Option<PathBuf>) -> impl Drop {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            OUTPUT_OVERRIDE.with(|o| *o.borrow_mut() = None);
+        }
+    }
+    OUTPUT_OVERRIDE.with(|o| *o.borrow_mut() = dir);
+    Reset
+}
+
 /// Where outputs go: `None` means next to each input file.
 pub fn set_output_dir(dir: Option<PathBuf>) {
     *OUTPUT_DIR.write().unwrap() = dir;
@@ -244,7 +302,11 @@ pub fn action_output_ext(action_id: &str, input: &Path) -> Option<String> {
 
 /// The configured output folder if it still exists, else the input's folder.
 pub fn destination(input: &Path) -> PathBuf {
+    // The CLI's --out and watch folders win over a recipe's own folder.
     if let Some(dir) = THREAD_OUTPUT_DIR.with(|d| d.borrow().clone()) {
+        return dir;
+    }
+    if let Some(dir) = OUTPUT_OVERRIDE.with(|o| o.borrow().clone()).filter(|d| d.is_dir()) {
         return dir;
     }
     match OUTPUT_DIR.read().unwrap().as_ref() {

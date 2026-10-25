@@ -50,11 +50,18 @@ async fn run_action(
     tauri::async_runtime::spawn_blocking(move || {
         let _job = engine::jobs::begin(job_id.as_deref());
         let report = |f: f32| emit_progress(&app, &label, &path, f);
-        engine::run_action(&action_id, std::path::Path::new(&path), &report)
-            .map(|p| p.to_string_lossy().into_owned())
+        let input = std::path::Path::new(&path);
+        let out = engine::run_action(&action_id, input, &report)?;
+        engine::naming::finish(input, out, true).map(|p| p.to_string_lossy().into_owned())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// "Custom…" entries the drawer can show for this file's groups.
+#[tauri::command]
+fn custom_forms(path: String) -> Vec<engine::params::CustomForm> {
+    engine::custom_forms(std::path::Path::new(&path))
 }
 
 #[tauri::command]
@@ -77,7 +84,8 @@ async fn run_combine(
         let first = paths.first().cloned().unwrap_or_default();
         let report = |f: f32| emit_progress(&app, &label, &first, f);
         let inputs: Vec<_> = paths.iter().map(std::path::PathBuf::from).collect();
-        engine::run_combine(&action_id, &inputs, &report).map(|p| p.to_string_lossy().into_owned())
+        let out = engine::run_combine(&action_id, &inputs, &report)?;
+        engine::naming::finish(&inputs[0], out, false).map(|p| p.to_string_lossy().into_owned())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -144,6 +152,7 @@ pub fn run() {
             settings::get_settings,
             settings::set_settings,
             settings::pick_output_dir,
+            settings::preview_names,
             settings::open_settings,
             hotkey::pause_hotkey,
             files::copy_paths,
@@ -164,6 +173,7 @@ pub fn run() {
             shelf::toggle_shelves,
             shelf::drag_icon,
             list_actions,
+            custom_forms,
             run_action,
             combine_actions,
             run_combine,
@@ -186,6 +196,9 @@ pub fn run() {
             watch::watch_errors,
             watch::watch_choices,
             watch::pick_watch_folder,
+            recipes::next_custom_forms,
+            recipes::check_step,
+            recipes::pick_recipe_folder,
         ])
         .setup(move |app| {
             settings::load(app.handle());
