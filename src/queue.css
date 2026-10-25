@@ -1,0 +1,34 @@
+/* Batch queue list (drawer and shelves): one row per file. */
+.queue { display: flex; flex-direction: column; min-height: 0; background: var(--layer); border: 1px solid var(--stroke); border-radius: 6px; }
+.q-head { display: flex; flex-direction: column; gap: 4px; padding: 4px 6px 6px 10px; border-bottom: 1px solid var(--stroke); flex: none; }
+.q-top { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.q-actions { display: flex; gap: 6px; }
+.q-actions .btn { flex: 1; }
+.q-title { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-rows { list-style: none; margin: 0; padding: 2px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 1px; }
+.q-rows li { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 3px 4px 3px 8px; border-radius: var(--r-control); }
+.q-rows li > .icon { width: 18px; height: 18px; color: var(--text-2); }
+.q-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.q-name, .q-state { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-name { font-size: 13px; line-height: 18px; }
+.q-state { font-size: 11px; line-height: 14px; color: var(--text-3); }
+.q-text progress { margin-top: 4px; }
+/* Indeterminate until the engine reports progress. */
+.q-text progress:not([value])::-webkit-progress-bar { background: linear-gradient(90deg, var(--stroke-strong) 0 35%, var(--accent-text) 35% 55%, var(--stroke-strong) 55%) 0 0 / 300% 100%; animation: q-sweep 1.2s linear infinite; }
+@keyframes q-sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+.q-row.running > .icon { color: var(--accent-text); }
+.q-row.done { cursor: grab; }
+.q-row.done:hover { background: var(--subtle-hover); }
+.q-row.done .q-state { color: var(--success); }
+.q-row.failed .q-state { color: var(--critical); }
+.q-row.cancelled .q-name, .q-row.skipped .q-name { color: var(--text-3); }
+.q-btn { min-width: 28px; height: 28px; padding: 0 6px; }
+.q-btn .icon { width: 12px; height: 12px; }
+.q-btn.small { height: 26px; color: var(--accent-text); }
+
+/* Drawer: between the tools and the info bar. */
+.drawer #queue { margin: 0 12px 8px; max-height: 46%; flex: none; }
+
+/* Shelf: in place of the item list. */
+#shelf #queue { margin: 2px 8px 0; flex: 1 1 auto; }

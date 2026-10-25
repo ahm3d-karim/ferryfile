@@ -5,6 +5,7 @@ mod editing;
 mod engine;
 mod explorer;
 mod files;
+mod content;
 mod hotkey;
 mod recipes;
 mod settings;
@@ -63,6 +64,12 @@ async fn run_action(
 #[tauri::command]
 fn custom_forms(path: String) -> Vec<engine::params::CustomForm> {
     engine::custom_forms(std::path::Path::new(&path))
+}
+
+/// How many files of a batch to run at once through `steps` (one action or a recipe's steps).
+#[tauri::command]
+fn batch_limit(path: String, steps: Vec<String>) -> usize {
+    engine::parallel_limit(std::path::Path::new(&path), &steps)
 }
 
 #[tauri::command]
@@ -165,6 +172,11 @@ pub fn run() {
             files::file_info,
             shelf::shelf_state,
             shelf::shelf_add,
+            shelf::shelf_add_text,
+            shelf::shelf_add_url,
+            shelf::shelf_add_bytes,
+            shelf::shelf_paste,
+            shelf::shelf_focus,
             shelf::shelf_remove,
             shelf::shelf_replace,
             shelf::shelf_set_pinned,
@@ -176,6 +188,7 @@ pub fn run() {
             list_actions,
             custom_forms,
             run_action,
+            batch_limit,
             combine_actions,
             run_combine,
             cancel_job,
@@ -212,10 +225,11 @@ pub fn run() {
 
             let show_shelves = MenuItem::with_id(app, "shelves", "Show shelves", true, None::<&str>)?;
             let new_shelf = MenuItem::with_id(app, "new-shelf", "New shelf", true, None::<&str>)?;
+            let paste = MenuItem::with_id(app, "paste", "Paste to shelf", true, None::<&str>)?;
             let open_settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let show_tutorial = MenuItem::with_id(app, "tutorial", "Show tutorial", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Ferryfile", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_shelves, &new_shelf, &open_settings, &show_tutorial, &quit])?;
+            let menu = Menu::with_items(app, &[&show_shelves, &new_shelf, &paste, &open_settings, &show_tutorial, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Ferryfile")
@@ -230,6 +244,7 @@ pub fn run() {
                         let app = app.clone();
                         tauri::async_runtime::spawn(async move { shelf::new_shelf(&app) });
                     }
+                    "paste" => shelf::paste_from_tray(app),
                     "settings" => settings::open_settings(app.clone()),
                     "tutorial" => {
                         let app = app.clone();

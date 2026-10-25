@@ -242,6 +242,10 @@ fn prepare_for(ext: &str, img: DynamicImage) -> DynamicImage {
 }
 
 impl Engine for ImageEngine {
+    fn max_parallel(&self, _action_id: &str, _input: &Path) -> usize {
+        super::half_cpus()
+    }
+
     fn actions(&self, path: &Path) -> Vec<Action> {
         let ext = ext_of(path);
         if !INPUTS.contains(&ext.as_str()) {

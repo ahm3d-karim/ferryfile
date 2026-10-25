@@ -13,6 +13,7 @@ body { overflow: hidden; user-select: none; }
 header { display: flex; align-items: center; gap: 2px; height: 40px; padding: 0 4px 0 14px; flex: none; }
 .title { font-weight: 600; }
 .count { flex: 1; padding-left: 6px; font-size: 12px; color: var(--text-3); }
+#paste { min-width: 0; height: 28px; padding: 0 8px; font-size: 12px; }
 #pin.on { color: var(--accent-text); }
 #pin.on svg { fill: currentColor; }
 

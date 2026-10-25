@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import { icon, hydrateIcons, iconForPath } from "./icons.js";
+import { createQueue, batchLimit } from "./queue.js";
 
 const $ = (id) => document.getElementById(id);
 const shelf = $("shelf");
@@ -96,7 +97,10 @@ function draggable(node, paths) {
 
 function render() {
   const n = items.length;
-  $("empty").hidden = n > 0;
+  // While a batch list is up it takes the items' place (same files, with status).
+  const queueShown = !$("queue").hidden;
+  list.hidden = queueShown;
+  $("empty").hidden = n > 0 || queueShown;
   $("drag-all").hidden = $("actions").hidden = n === 0;
   if (n === 0) panel.hidden = true;
   $("count").textContent = n ? `${n} item${n > 1 ? "s" : ""}` : "";
@@ -135,6 +139,23 @@ function render() {
 
 let running = null; // { index, count, jobId, cancelled }
 
+// Several files: a queue list with a row per file (see queue.js).
+const batch = createQueue($("queue"), {
+  onChange(s) {
+    panel.classList.toggle("disabled", s.busy);
+    if (s.busy) setStatus("");
+    if (!s.total) render(); // list cleared: show the items again
+  },
+  async onDone(outputs, s) {
+    if (outputs.length) await invoke("shelf_add", { id, paths: outputs });
+    const skipped = s.skipped ? ` (${s.skipped} skipped: not supported)` : "";
+    const added = outputs.length ? `Added ${outputs.length} result${outputs.length > 1 ? "s" : ""} to the shelf` : "";
+    if (s.failed) setStatus(`${s.failed} of ${s.total} failed${added ? `. ${added}` : ""}`, "error");
+    else if (s.cancelled) setStatus(added ? `Cancelled. ${added}` : "Cancelled", "");
+    else setStatus(added ? `${added}${skipped}` : `Nothing to do${skipped}`, added ? "ok" : "");
+  },
+});
+
 listen("ferryfile-progress", (e) => {
   if (!running) return;
   progressEl.hidden = false;
@@ -153,8 +174,17 @@ $("info-cancel").addEventListener("click", () => {
  * shelf, so results are ready to drag out. Items an action doesn't apply to
  * are skipped; Cancel stops the current item and the rest.
  */
-async function runOnShelf(label, job, targets = items) {
-  if (running) return;
+async function runOnShelf(label, job, targets = items, steps = []) {
+  if (running || batch.busy()) return;
+  if (targets.length > 1) {
+    panel.hidden = true;
+    setActionsLabel();
+    setStatus("");
+    $("queue").hidden = false;
+    render();
+    batch.run({ targets: [...targets], run: job, max: await batchLimit(targets[0], steps) });
+    return;
+  }
   setStatus(`${label}…`, "busy");
   $("info-cancel").hidden = false;
   panel.classList.add("disabled");
@@ -230,12 +260,12 @@ async function renderActions() {
     ),
     section(
       "Recipes",
-      recipes.map((r) => chip(r.name, () => runOnShelf(r.name, (p, jobId) => invoke("run_recipe", { id: r.id, path: p, jobId })), r.stepTitles.join(" → "))),
+      recipes.map((r) => chip(r.name, () => runOnShelf(r.name, (p, jobId) => invoke("run_recipe", { id: r.id, path: p, jobId }), items, r.steps), r.stepTitles.join(" → "))),
     ),
     ...[...groups].map(([name, acts]) =>
       section(
         name,
-        acts.map((a) => chip(a.label, () => runOnShelf(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId })))),
+        acts.map((a) => chip(a.label, () => runOnShelf(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId }), items, [a.id]))),
       ),
     ),
     section("Files", [
@@ -301,13 +331,94 @@ document.addEventListener("dragover", (e) => {
 document.addEventListener("dragleave", (e) => {
   if (!e.relatedTarget) shelf.classList.remove("hover");
 });
+// Files go to Rust for their paths. Text, links and images from a browser or
+// another app are saved as files (.txt, .url, .png) and land here like any file.
+let pendingDrop = null; // { files, link } until Rust answers with the paths
+
 document.addEventListener("drop", (e) => {
   e.preventDefault();
   shelf.classList.remove("hover");
-  if (e.dataTransfer.files.length) {
-    window.chrome.webview.postMessageWithAdditionalObjects("ferryfile-drop", e.dataTransfer.files);
+  const dt = e.dataTransfer;
+  const link = linkOf(dt);
+  if (dt.files.length) {
+    pendingDrop = { files: [...dt.files], link };
+    window.chrome.webview.postMessageWithAdditionalObjects("ferryfile-drop", dt.files);
+  } else if (link) {
+    added(invoke("shelf_add_url", { id, url: link.url, title: link.title }));
+  } else {
+    const text = dt.getData("text/plain");
+    if (text.trim()) added(invoke("shelf_add_text", { id, text }));
   }
 });
-listen("ferryfile-dropped", (e) => invoke("shelf_add", { id, paths: e.payload }));
+
+listen("ferryfile-dropped", async (e) => {
+  const paths = e.payload;
+  if (paths.length) invoke("shelf_add", { id, paths });
+  const drop = pendingDrop;
+  pendingDrop = null;
+  if (!drop) return;
+  // Files without a path (an image dragged out of a browser, an Outlook
+  // attachment): read their bytes here and let Rust save them.
+  const names = new Set(paths.map(basename));
+  for (const file of drop.files.filter((f) => !names.has(f.name))) {
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await added(invoke("shelf_add_bytes", bytes, { headers: { "x-shelf-id": id, "x-name": encodeURIComponent(file.name) } }));
+    } catch {
+      // Couldn't read it: keep at least a shortcut to where it came from.
+      if (drop.link) added(invoke("shelf_add_url", { id, url: drop.link.url, title: drop.link.title }));
+    }
+  }
+});
+
+/** The dragged link and its title, if a browser sent one. */
+function linkOf(dt) {
+  const moz = dt.getData("text/x-moz-url"); // Firefox: url, newline, title
+  if (moz) {
+    const [url, title] = moz.split(/\r?\n/);
+    if (/^https?:/i.test(url)) return { url, title: title || null };
+  }
+  const url = dt.getData("text/uri-list").split(/\r?\n/).find((l) => l && !l.startsWith("#"));
+  if (!url || !/^https?:/i.test(url)) return null;
+  // Chrome and Edge send the link as <a href>title</a>; an image as <img alt>.
+  const doc = new DOMParser().parseFromString(dt.getData("text/html"), "text/html");
+  const a = doc.querySelector("a");
+  const title = (a?.textContent || doc.querySelector("img")?.alt || doc.title || "").trim();
+  const plain = dt.getData("text/plain").trim();
+  return { url, title: title || (plain && plain !== url ? plain : null) };
+}
+
+/** Shows what a save added (or why it failed). */
+async function added(task) {
+  try {
+    const paths = await task;
+    if (paths?.length) setStatus(`Added ${paths.map(basename).join(", ")}`, "ok");
+    return paths;
+  } catch (err) {
+    setStatus(String(err), "error");
+  }
+}
+
+// ---------------------------------------------------------------- paste
+
+async function paste() {
+  const paths = await added(invoke("shelf_paste", { id }));
+  if (paths?.length) setStatus(`Pasted ${paths.map(basename).join(", ")}`, "ok");
+}
+$("paste").addEventListener("click", paste);
+
+// Shelves never take focus by themselves (drags in mustn't steal it from the
+// app you drag from). Clicking one lets it, so Ctrl+V works; it lets go again
+// when you click elsewhere.
+document.addEventListener("pointerdown", () => {
+  if (!document.hasFocus()) invoke("shelf_focus", { id, focus: true });
+});
+window.addEventListener("blur", () => invoke("shelf_focus", { id, focus: false }));
+window.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "v") {
+    e.preventDefault();
+    paste();
+  }
+});
 
 apply(await invoke("shelf_state", { id }));
