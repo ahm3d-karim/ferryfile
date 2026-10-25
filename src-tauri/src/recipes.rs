@@ -108,6 +108,11 @@ pub fn all(app: &AppHandle) -> Vec<Recipe> {
     v
 }
 
+/// Steps of every recipe, built-in and custom (to skip suggesting a saved one).
+pub fn all_steps(app: &AppHandle) -> Vec<Vec<String>> {
+    all(app).into_iter().map(|r| r.steps).collect()
+}
+
 fn view(recipe: Recipe, actions: Vec<Action>) -> RecipeView {
     RecipeView {
         builtin: is_builtin(&recipe.id),
@@ -246,7 +251,9 @@ pub async fn run_recipe(
         let report = |f: f32| crate::emit_progress(&app, &label, &path, f);
         let input = Path::new(&path);
         let out = engine::run_chain(input, &recipe.steps, &report)?;
-        engine::naming::finish(input, out, true).map(|p| p.to_string_lossy().into_owned())
+        let out = engine::naming::finish(input, out, true).map(|p| p.to_string_lossy().into_owned())?;
+        crate::suggest::record(&app, &path, &recipe.steps, &out);
+        Ok(out)
     })
     .await
     .map_err(|e| e.to_string())?

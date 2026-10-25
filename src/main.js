@@ -90,12 +90,15 @@ function setInfo(kind, text = "") {
   $("progress").hidden = kind !== "busy";
   $("info-cancel").hidden = kind !== "busy";
   $("info-show").hidden = !(kind === "ok" && lastOutput);
+  // OCR without an installed language: offer the Windows page that adds one.
+  $("info-fix").hidden = !(kind === "error" && text.includes("Language & region"));
   // A finished result can be dragged straight into another app.
   const draggableResult = kind === "ok" && lastOutputs.length > 0;
   bar.classList.toggle("can-drag", draggableResult);
   bar.title = draggableResult ? "Drag the result into any app" : "";
 }
 $("info-show").addEventListener("click", () => lastOutput && invoke("reveal", { path: lastOutput }));
+$("info-fix").addEventListener("click", () => invoke("open_language_settings"));
 
 // Drag the finished result out of the drawer (same native drag as shelves).
 const iconReady = invoke("drag_icon");
@@ -188,6 +191,7 @@ async function pump() {
   if (!task) return;
   if (task.targets.length > 1) return pumpBatch(task);
   running = { label: task.label, index: 0, count: task.targets.length, jobId: null, cancelled: false, started: Date.now() };
+  hideSuggestion();
   $("progress").value = 0;
   const results = [];
   let failure = null;
@@ -217,6 +221,7 @@ async function pump() {
     const saved = `Saved ${results.map(basename).join(", ")}`;
     setInfo("ok", saved);
     notifyIfAway(started, saved);
+    if (lastOutput && !queue.length) offerRecipe(lastOutput);
   }
   pump();
 }
@@ -258,6 +263,50 @@ async function quick(done, task) {
   }
 }
 
+// ---------------------------------------------------------------- suggested recipes
+
+// After the same chain of steps has run three times (an action, then another
+// on its output…), the backend offers it as a recipe.
+let suggestion = null; // { steps, stepTitles, samplePath, count }
+
+const chainName = (titles) => {
+  const name = titles.join(" → ");
+  return name.length > 60 ? `${name.slice(0, 59)}…` : name;
+};
+
+async function offerRecipe(output) {
+  let s = null;
+  try {
+    s = await invoke("recipe_suggestion", { path: output });
+  } catch {
+    return;
+  }
+  if (!s || editing || running) return;
+  suggestion = s;
+  $("suggestion-name").textContent = chainName(s.stepTitles);
+  $("suggestion-sub").textContent = `You've run these ${s.steps.length} steps in a row ${s.count} times.`;
+  $("suggestion").hidden = false;
+}
+
+function hideSuggestion() {
+  suggestion = null;
+  $("suggestion").hidden = true;
+}
+
+$("suggestion-save").addEventListener("click", () => {
+  const s = suggestion;
+  if (!s) return;
+  hideSuggestion();
+  openEditor({ id: null, name: chainName(s.stepTitles), steps: s.steps, stepTitles: s.stepTitles }, { basePath: s.samplePath, isNew: true });
+});
+const dismiss = (forever) => () => {
+  if (!suggestion) return;
+  invoke("dismiss_suggestion", { steps: suggestion.steps, forever });
+  hideSuggestion();
+};
+$("suggestion-never").addEventListener("click", dismiss(true));
+$("suggestion-close").addEventListener("click", dismiss(false));
+
 // ---------------------------------------------------------------- building blocks
 
 function row(label, onClick, { hint = "", search = label, iconName = null, extra = null } = {}) {
@@ -293,7 +342,27 @@ function group(heading, body) {
 }
 
 const runAction = (a) => () =>
-  runJob(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId }), paths, [a.id]);
+  a.id === COPY_TEXT.id
+    ? copyText()
+    : runJob(`${a.group}: ${a.label}`, (p, jobId) => invoke("run_action", { actionId: a.id, path: p, jobId }), paths, [a.id]);
+
+/** "Copy text": OCR straight to the clipboard, no file. Sits next to "Extract text". */
+const COPY_TEXT = { id: "ocr:copy", label: "Copy text", group: "OCR" };
+async function copyText() {
+  if (running) return;
+  const p = paths[0];
+  setInfo("busy", "Reading text…");
+  $("progress").hidden = true;
+  $("info-cancel").hidden = true;
+  try {
+    const words = await invoke("copy_text", { path: p });
+    lastOutput = null;
+    lastOutputs = [];
+    setInfo("ok", `Copied ${words} word${words === 1 ? "" : "s"} from ${basename(p)}`);
+  } catch (err) {
+    setInfo("error", `${basename(p)}: ${err}`);
+  }
+}
 
 // ---------------------------------------------------------------- custom values
 
@@ -338,7 +407,7 @@ const VERBS = { Resize: "Resize", Compress: "Compress", "Shrink to": "Shrink" };
 // ---------------------------------------------------------------- render
 
 async function renderActions() {
-  const [actions, combined, forms] = await Promise.all([
+  let [actions, combined, forms] = await Promise.all([
     invoke("list_actions", { path: paths[0] }),
     paths.length > 1 ? invoke("combine_actions", { paths }) : [],
     invoke("custom_forms", { path: paths[0] }),
@@ -350,6 +419,9 @@ async function renderActions() {
     const top = anchor?.parentElement?.classList.contains("pair") ? anchor.parentElement : anchor;
     showCustom(form, top, { submitLabel: VERBS[form.group] ?? "Run", onAction: (a) => runAction(a)() });
   };
+
+  const ocrAt = actions.findIndex((a) => a.id === "ocr:txt");
+  if (ocrAt >= 0 && paths.length === 1) actions = [...actions.slice(0, ocrAt + 1), COPY_TEXT, ...actions.slice(ocrAt + 1)];
 
   // Suggested: the most likely action, on Enter.
   const all = [...combined, ...actions];
@@ -565,7 +637,7 @@ function showTool(id) {
     runJob,
     saveRecipe: (step) => {
       closeTool();
-      openEditor(null, [step]);
+      openEditor(null, { steps: [step] });
     },
     onClose: () => {
       toolsEl.hidden = false;
@@ -586,6 +658,7 @@ async function showFiles(dropped) {
     batchView.clear();
     setInfo(null);
   }
+  hideSuggestion();
   if (!paths.length) return;
 
   searchEl.value = "";
@@ -599,20 +672,26 @@ suggestedBtn.addEventListener("click", () => suggestedRun?.());
 
 // ---------------------------------------------------------------- editor
 
-let editing = null; // { id: string | null, steps: [{ id, title }], outputDir: string | null }
+// basePath: a file like the one the recipe starts from (a suggestion's chain
+// may start from another format than the file in the drawer now).
+let editing = null; // { id: string | null, steps: [{ id, title }], outputDir: string | null, basePath }
 let stepForms = []; // "Custom…" entries offered in the add-step list
 
-/** `steps` pre-fills a new recipe, e.g. with a trim from the Trim view. */
-function openEditor(recipe, steps = []) {
+/**
+ * `steps` pre-fills a new recipe (e.g. a trim from the Trim view); `basePath`
+ * and `isNew` come from a suggested recipe.
+ */
+function openEditor(recipe, { steps = [], basePath = null, isNew = !recipe } = {}) {
   closeCustom();
   editing = {
     id: recipe?.id ?? null,
     steps: recipe ? recipe.steps.map((id, i) => ({ id, title: recipe.stepTitles[i] })) : [...steps],
     outputDir: recipe?.outputDir ?? null,
+    basePath,
   };
-  $("editor-title").textContent = recipe ? "Edit recipe" : "New recipe";
+  $("editor-title").textContent = isNew ? "New recipe" : "Edit recipe";
   nameEl.value = recipe?.name ?? steps[0]?.title ?? "";
-  deleteBtn.hidden = !recipe;
+  deleteBtn.hidden = isNew;
   toolsEl.hidden = true;
   editor.hidden = false;
   setInfo(null);
@@ -656,9 +735,10 @@ async function refreshEditor() {
   editorError.textContent = "";
   const steps = editing.steps.map((s) => s.id);
   try {
+    const base = editing.basePath ?? paths[0];
     [next, stepForms] = await Promise.all([
-      invoke("next_actions", { path: paths[0], steps }),
-      invoke("next_custom_forms", { path: paths[0], steps }),
+      invoke("next_actions", { path: base, steps }),
+      invoke("next_custom_forms", { path: base, steps }),
     ]);
   } catch (err) {
     editorError.textContent = err;

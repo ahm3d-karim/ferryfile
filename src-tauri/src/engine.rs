@@ -19,11 +19,14 @@ pub(crate) mod media_edit;
 pub mod jobs;
 mod msoffice_engine;
 pub mod naming;
+mod ocr;
+mod ocr_engine;
 mod office_engine;
 pub mod params;
 mod pdf_docx;
 mod pdf_engine;
 mod pdf_layout;
+mod pdf_ocr;
 pub(crate) mod pdf_tools;
 pub(crate) mod ranges;
 mod subtitle_engine;
@@ -107,8 +110,11 @@ fn engines() -> Vec<Box<dyn Engine>> {
         Box::new(docling_engine::DoclingEngine),
         Box::new(archive_engine::ArchiveEngine),
         Box::new(subtitle_engine::SubtitleEngine),
+        Box::new(ocr_engine::OcrEngine),
     ]
 }
+
+pub use ocr_engine::recognized_text;
 
 pub fn ext_of(path: &Path) -> String {
     path.extension()

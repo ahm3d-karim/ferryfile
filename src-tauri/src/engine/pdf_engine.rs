@@ -10,6 +10,7 @@ use image::DynamicImage;
 use pdfium_render::prelude::*;
 
 use super::pdf_docx::{pdf_markdown, pdf_to_docx};
+use super::pdf_ocr::pdf_plain_text;
 use super::pdf_tools;
 use super::{bundled_candidates, ext_of, output_dir, output_path, Action, Engine, Progress, FOLDER_EXT};
 
@@ -86,9 +87,9 @@ fn render_pages(input: &Path, fmt: &str, progress: Progress) -> Result<PathBuf, 
 }
 
 /// PDF text as plain text (`txt`) or reflowed Markdown (`md`).
-fn extract_text(input: &Path, fmt: &str) -> Result<PathBuf, String> {
+fn extract_text(input: &Path, fmt: &str, progress: Progress) -> Result<PathBuf, String> {
     let body = if fmt == "md" {
-        let md = pdf_markdown(input)?;
+        let md = pdf_markdown(input, progress)?;
         if md.starts_with('#') {
             md
         } else {
@@ -96,13 +97,7 @@ fn extract_text(input: &Path, fmt: &str) -> Result<PathBuf, String> {
             format!("# {title}\n\n{md}")
         }
     } else {
-        let pdfium = pdfium()?;
-        let doc = pdfium.load_pdf_from_file(input, None).map_err(err)?;
-        let mut pages = Vec::new();
-        for page in doc.pages().iter() {
-            pages.push(page.text().map_err(err)?.all());
-        }
-        pages.join("\n\n")
+        pdf_plain_text(input, progress)?
     };
     let out = output_path(input, "", fmt);
     std::fs::write(&out, body.trim_end()).map_err(|e| e.to_string())?;
@@ -127,7 +122,7 @@ fn split_pages(input: &Path, progress: Progress) -> Result<PathBuf, String> {
 }
 
 /// One PDF from PDFs and/or images, in the given order.
-fn combine_to_pdf(inputs: &[PathBuf], out: &Path, progress: Progress) -> Result<(), String> {
+pub(super) fn combine_to_pdf(inputs: &[PathBuf], out: &Path, progress: Progress) -> Result<(), String> {
     let pdfium = pdfium()?;
     let mut doc = pdfium.create_new_pdf().map_err(err)?;
     for (i, input) in inputs.iter().enumerate() {
@@ -180,7 +175,7 @@ impl Engine for PdfEngine {
     fn run(&self, action_id: &str, input: &Path, progress: Progress) -> Result<PathBuf, String> {
         match action_id.split_once(':').ok_or("bad action id")? {
             ("pages", fmt) => render_pages(input, fmt, progress),
-            ("text", fmt) => extract_text(input, fmt),
+            ("text", fmt) => extract_text(input, fmt, progress),
             ("split", "pages") => split_pages(input, progress),
             ("split", spec) => pdf_tools::split_ranges(input, spec, progress),
             ("extract", spec) => pdf_tools::extract_pages(input, spec, progress),

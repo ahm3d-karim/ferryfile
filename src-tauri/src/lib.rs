@@ -13,6 +13,7 @@ mod shake;
 mod shelf;
 mod tutorial;
 mod watch;
+mod suggest;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -54,7 +55,10 @@ async fn run_action(
         let report = |f: f32| emit_progress(&app, &label, &path, f);
         let input = std::path::Path::new(&path);
         let out = engine::run_action(&action_id, input, &report)?;
-        engine::naming::finish(input, out, true).map(|p| p.to_string_lossy().into_owned())
+        // Name it by the user's pattern first, so a suggestion records the final file.
+        let out = engine::naming::finish(input, out, true).map(|p| p.to_string_lossy().into_owned())?;
+        suggest::record(&app, &path, std::slice::from_ref(&action_id), &out);
+        Ok(out)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -70,6 +74,29 @@ fn custom_forms(path: String) -> Vec<engine::params::CustomForm> {
 #[tauri::command]
 fn batch_limit(path: String, steps: Vec<String>) -> usize {
     engine::parallel_limit(std::path::Path::new(&path), &steps)
+}
+
+/// Reads the text in an image (OCR) or PDF and puts it on the clipboard.
+#[tauri::command]
+async fn copy_text(path: String) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = engine::recognized_text(std::path::Path::new(&path))?;
+        let crlf = text.lines().collect::<Vec<_>>().join("\r\n");
+        clipboard_win::set_clipboard_string(&crlf).map_err(|e| e.to_string())?;
+        Ok(text.split_whitespace().count())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Opens Windows' language settings, where OCR languages are added.
+#[tauri::command]
+fn open_language_settings() -> Result<(), String> {
+    std::process::Command::new("explorer.exe")
+        .arg("ms-settings:regionlanguage")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -218,6 +245,10 @@ pub fn run() {
             editing::crop_source,
             editing::pdf_ranges,
             editing::merge_plan,
+            suggest::recipe_suggestion,
+            suggest::dismiss_suggestion,
+            copy_text,
+            open_language_settings,
         ])
         .setup(move |app| {
             settings::load(app.handle());

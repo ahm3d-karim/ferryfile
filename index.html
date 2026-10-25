@@ -89,6 +89,18 @@
       </div>
 
       <section id="queue" hidden aria-label="Batch queue"></section>
+      <aside id="suggestion" class="suggestion" hidden aria-live="polite">
+        <span class="suggestion-icon" data-icon="recipe"></span>
+        <div class="suggestion-body">
+          <p class="suggestion-title">Save <q id="suggestion-name"></q> as a recipe?</p>
+          <p class="suggestion-sub" id="suggestion-sub"></p>
+          <div class="suggestion-buttons">
+            <button id="suggestion-save" type="button" class="btn small accent">Save…</button>
+            <button id="suggestion-never" type="button" class="btn small">Don't suggest this</button>
+          </div>
+        </div>
+        <button id="suggestion-close" type="button" class="icon-btn" data-icon="close" title="Not now" aria-label="Not now"></button>
+      </aside>
 
       <footer id="infobar" class="infobar" hidden>
         <span id="info-state" class="state"></span>
@@ -97,6 +109,7 @@
           <progress id="progress" max="1" value="0" hidden></progress>
         </div>
         <button id="info-show" type="button" class="btn small" hidden>Show</button>
+        <button id="info-fix" type="button" class="btn small" hidden>Open settings</button>
         <button id="info-cancel" type="button" class="btn small" hidden>Cancel</button>
       </footer>
     </main>

@@ -61,6 +61,8 @@ pub struct Settings {
     pub shake_sensitivity: Sensitivity,
     /// Folders whose new files run through a recipe or action.
     pub watch_folders: Vec<crate::watch::WatchFolder>,
+    /// Offer to save action chains you repeat as recipes.
+    pub suggest_recipes: bool,
 }
 
 impl Default for Settings {
@@ -77,6 +79,7 @@ impl Default for Settings {
             shake_to_shelf: true,
             shake_sensitivity: Sensitivity::Normal,
             watch_folders: Vec::new(),
+            suggest_recipes: true,
         }
     }
 }
@@ -166,6 +169,9 @@ pub fn set_settings(app: AppHandle, settings: Settings, autostart: bool) -> Resu
     std::fs::write(&path, json).map_err(|e| e.to_string())?;
     if settings.watch_folders != current().watch_folders {
         crate::watch::configure(&app, &settings.watch_folders);
+    }
+    if !settings.suggest_recipes && current().suggest_recipes {
+        crate::suggest::clear(&app); // off means nothing is kept, either
     }
     apply(settings);
     Ok(())

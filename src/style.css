@@ -89,6 +89,23 @@ body { overflow: hidden; }
 
 #tools.disabled { opacity: 0.5; pointer-events: none; }
 
+/* "Save these steps as a recipe?" card, above the info bar */
+.suggestion {
+  display: flex; align-items: flex-start; gap: 10px; flex: none;
+  margin: 0 12px 8px; padding: 10px 4px 10px 12px;
+  background: var(--layer); border: 1px solid var(--stroke); border-left: 3px solid var(--accent-text);
+  border-radius: var(--r-control);
+  animation: suggestion-in 0.2s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+@keyframes suggestion-in { from { opacity: 0; transform: translateY(6px); } }
+.suggestion-icon { color: var(--accent-text); padding-top: 1px; }
+.suggestion-body { flex: 1; min-width: 0; }
+.suggestion-title { margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; overflow-wrap: anywhere; }
+.suggestion-sub { margin: 2px 0 0; font-size: 12px; line-height: 16px; color: var(--text-3); }
+.suggestion-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.suggestion > .icon-btn { margin-top: -4px; }
+.suggestion > .icon-btn .icon { width: 14px; height: 14px; }
+
 /* Info bar pinned to the bottom */
 #infobar { margin: 0 12px 12px; flex: none; }
 #infobar progress { margin-top: 6px; }
