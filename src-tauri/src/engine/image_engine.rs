@@ -8,7 +8,12 @@ use image::DynamicImage;
 
 use super::{ext_of, image_meta, output_path, Action, Engine, Progress};
 
-const INPUTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif", "avif"];
+const INPUTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif", "avif", "svg"];
+/// SVGs smaller than this (longest side, px) are scaled up when rasterised,
+/// so a 24 px icon doesn't become a 24 px PNG.
+const SVG_MIN_SIDE: f32 = 1024.0;
+/// "Shrink to" targets for photos, in KB (decimal), with their labels.
+const FIT_KB: &[(u64, &str)] = &[(1000, "1 MB"), (500, "500 KB"), (200, "200 KB")];
 /// Photo formats the `image` crate can't read: decoded with ffmpeg and
 /// written back as JPG, since nothing here can encode them.
 const VIA_FFMPEG: &[&str] = &["heic", "heif", "avif"];
@@ -44,13 +49,65 @@ fn writable_ext(input: &Path) -> String {
     }
 }
 
-/// Opens any supported image, going through ffmpeg for HEIC/HEIF/AVIF.
+/// Opens any supported image, going through ffmpeg for HEIC/HEIF/AVIF and
+/// resvg for SVG.
 fn open_image(input: &Path) -> Result<DynamicImage, String> {
-    if VIA_FFMPEG.contains(&ext_of(input).as_str()) {
+    if ext_of(input) == "svg" {
+        render_svg(input)
+    } else if VIA_FFMPEG.contains(&ext_of(input).as_str()) {
         decode_with_ffmpeg(input)
     } else {
         image::open(input).map_err(|e| format!("Could not open image: {e}"))
     }
+}
+
+fn svg_fonts() -> std::sync::Arc<resvg::usvg::fontdb::Database> {
+    static DB: std::sync::OnceLock<std::sync::Arc<resvg::usvg::fontdb::Database>> = std::sync::OnceLock::new();
+    DB.get_or_init(|| {
+        let mut db = resvg::usvg::fontdb::Database::new();
+        db.load_system_fonts();
+        std::sync::Arc::new(db)
+    })
+    .clone()
+}
+
+/// Rasterises an SVG at its own size, scaled up if it's small (icons).
+fn render_svg(input: &Path) -> Result<DynamicImage, String> {
+    use resvg::{tiny_skia, usvg};
+    let data = std::fs::read(input).map_err(|e| e.to_string())?;
+    let mut opt = usvg::Options::default();
+    opt.resources_dir = input.parent().map(Path::to_path_buf);
+    opt.fontdb = svg_fonts();
+    let tree = usvg::Tree::from_data(&data, &opt).map_err(|e| format!("Could not read this SVG: {e}"))?;
+    let size = tree.size();
+    let longest = size.width().max(size.height());
+    let scale = if longest < SVG_MIN_SIDE { SVG_MIN_SIDE / longest } else { 1.0 };
+    let w = (size.width() * scale).round().max(1.0) as u32;
+    let h = (size.height() * scale).round().max(1.0) as u32;
+    let mut pixmap = tiny_skia::Pixmap::new(w, h).ok_or("This SVG is too large to render")?;
+    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    // tiny-skia stores premultiplied alpha; image wants straight alpha.
+    let mut rgba = image::RgbaImage::new(w, h);
+    for (dst, px) in rgba.pixels_mut().zip(pixmap.pixels()) {
+        let c = px.demultiply();
+        *dst = image::Rgba([c.red(), c.green(), c.blue(), c.alpha()]);
+    }
+    Ok(DynamicImage::ImageRgba8(rgba))
+}
+
+/// SVG -> PDF through the built-in Typst typesetter, which keeps it vector
+/// (sharp at any zoom, text stays text). The page is exactly the SVG's size.
+fn svg_to_pdf(input: &Path) -> Result<PathBuf, String> {
+    let dir = input.parent().ok_or("bad path")?;
+    let name = input.file_name().and_then(|n| n.to_str()).ok_or("bad file name")?;
+    let markup = format!(
+        "#set page(width: auto, height: auto, margin: 0pt)\n#image({})",
+        super::typeset::typst_str(name)
+    );
+    let pdf = super::typeset::typst_to_pdf(markup, dir)?;
+    let out = output_path(input, "", "pdf");
+    std::fs::write(&out, pdf).map_err(|e| e.to_string())?;
+    Ok(out)
 }
 
 /// Decodes the main picture of a HEIC/AVIF file into a temporary PNG and
@@ -118,10 +175,66 @@ fn strip_metadata(input: &Path) -> Result<PathBuf, String> {
     Ok(out)
 }
 
+/// Places a transparent image on white (dropping alpha alone would leave
+/// transparent areas whatever colour they happen to store, often black).
+pub(super) fn flatten_on_white(img: DynamicImage) -> image::RgbImage {
+    if !img.color().has_alpha() {
+        return img.into_rgb8();
+    }
+    let rgba = img.into_rgba8();
+    image::RgbImage::from_fn(rgba.width(), rgba.height(), |x, y| {
+        let [r, g, b, a] = rgba.get_pixel(x, y).0;
+        let mix = |c: u8| ((c as u32 * a as u32 + 255 * (255 - a as u32) + 127) / 255) as u8;
+        image::Rgb([mix(r), mix(g), mix(b)])
+    })
+}
+
+fn encode_jpeg(img: &image::RgbImage, quality: u8) -> Result<Vec<u8>, String> {
+    let mut buf = Vec::new();
+    JpegEncoder::new_with_quality(&mut buf, quality).encode_image(img).map_err(|e| e.to_string())?;
+    Ok(buf)
+}
+
+/// The best-looking JPG of `img` that fits in `target` bytes: the highest
+/// quality that fits, and if even low quality is too big, a smaller picture.
+fn fit_jpeg(img: DynamicImage, target: u64) -> Result<Vec<u8>, String> {
+    const MIN_Q: u8 = 40;
+    const MAX_Q: u8 = 92;
+    let mut rgb = flatten_on_white(img);
+    for _ in 0..8 {
+        super::jobs::check()?;
+        let floor = encode_jpeg(&rgb, MIN_Q)?;
+        if floor.len() as u64 <= target {
+            // Binary search the highest quality that still fits.
+            let (mut lo, mut hi, mut best) = (MIN_Q, MAX_Q, floor);
+            while lo < hi {
+                let mid = (lo + hi).div_ceil(2);
+                let data = encode_jpeg(&rgb, mid)?;
+                if data.len() as u64 <= target {
+                    lo = mid;
+                    best = data;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            return Ok(best);
+        }
+        // File size scales roughly with pixel count: shrink both sides by
+        // the square root of how far over we are, with a margin.
+        let factor = ((target as f64 / floor.len() as f64).sqrt() * 0.9).clamp(0.1, 0.9);
+        let (w, h) = ((rgb.width() as f64 * factor) as u32, (rgb.height() as f64 * factor) as u32);
+        if w < 16 || h < 16 {
+            break;
+        }
+        rgb = image::imageops::resize(&rgb, w, h, FilterType::Lanczos3);
+    }
+    Err("Couldn't make this image that small".into())
+}
+
 /// JPEG has no alpha channel, so flatten before saving.
 fn prepare_for(ext: &str, img: DynamicImage) -> DynamicImage {
     if ext == "jpg" || ext == "jpeg" {
-        DynamicImage::ImageRgb8(img.into_rgb8())
+        DynamicImage::ImageRgb8(flatten_on_white(img))
     } else {
         img
     }
@@ -139,11 +252,19 @@ impl Engine for ImageEngine {
                 out.push(Action::new(&format!("convert:{t}"), label, "Convert"));
             }
         }
+        if ext == "svg" {
+            // Resizing or compressing a drawing doesn't mean much: just convert.
+            out.push(Action::new("convert:pdf", "PDF", "Convert"));
+            return out;
+        }
         for pct in [75, 50, 25] {
             out.push(Action::new(&format!("resize:{pct}"), &format!("{pct}%"), "Resize"));
         }
         out.push(Action::new("compress:75", "JPEG, quality 75", "Compress"));
         out.push(Action::new("compress:50", "JPEG, quality 50", "Compress"));
+        for (kb, label) in FIT_KB {
+            out.push(Action::new(&format!("fitkb:{kb}"), label, "Shrink to"));
+        }
         if STRIPPABLE.contains(&ext.as_str()) {
             out.push(Action::new("strip:meta", "Remove location & camera info", "Privacy"));
         }
@@ -154,7 +275,7 @@ impl Engine for ImageEngine {
         match action_id.split_once(':')? {
             ("convert", ext) => Some(ext.to_string()),
             ("resize", _) | ("strip", _) => Some(writable_ext(input)),
-            ("compress", _) => Some("jpg".into()),
+            ("compress" | "fitkb", _) => Some("jpg".into()),
             _ => None,
         }
     }
@@ -163,6 +284,22 @@ impl Engine for ImageEngine {
         let (kind, arg) = action_id.split_once(':').ok_or("bad action id")?;
         if kind == "strip" {
             return strip_metadata(input);
+        }
+        if action_id == "convert:pdf" && ext_of(input) == "svg" {
+            return svg_to_pdf(input);
+        }
+        if kind == "fitkb" {
+            let kb: u64 = arg.parse().map_err(|_| "bad size")?;
+            let label = FIT_KB.iter().find(|(k, _)| *k == kb).map(|(_, l)| *l).unwrap_or("that size");
+            let target = kb * 1000;
+            let size = std::fs::metadata(input).map_err(|e| e.to_string())?.len();
+            if size <= target {
+                return Err(format!("Already under {label} — nothing to shrink"));
+            }
+            let data = fit_jpeg(open_image(input)?, target)?;
+            let out = output_path(input, &format!("-{}", label.replace(' ', "")), "jpg");
+            std::fs::write(&out, data).map_err(|e| e.to_string())?;
+            return Ok(out);
         }
         let img = open_image(input)?;
         match kind {
@@ -185,7 +322,7 @@ impl Engine for ImageEngine {
                 let quality: u8 = arg.parse().map_err(|_| "bad quality")?;
                 let out = output_path(input, "-compressed", "jpg");
                 let file = File::create(&out).map_err(|e| e.to_string())?;
-                let rgb = img.into_rgb8();
+                let rgb = flatten_on_white(img);
                 JpegEncoder::new_with_quality(BufWriter::new(file), quality)
                     .encode_image(&rgb)
                     .map_err(|e| e.to_string())?;
@@ -312,6 +449,67 @@ mod tests {
         let clean2 = std::fs::read(&out2).unwrap();
         assert!(!clean2.windows(4).any(|w| w == b"Exif"));
         assert_eq!(clean2, plain);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn shrinks_photo_to_target() {
+        let dir = temp_dir("photo-fit");
+        // Noisy 1600x1200 picture: a big PNG that also stays big as JPEG.
+        let mut seed = 7u32;
+        let img = image::RgbImage::from_fn(1600, 1200, |x, y| {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            image::Rgb([(x / 7) as u8, (y / 5) as u8, (seed >> 16) as u8])
+        });
+        let input = dir.join("photo.png");
+        img.save(&input).unwrap();
+        assert!(std::fs::metadata(&input).unwrap().len() > 1_000_000);
+
+        for (kb, name) in [(500, "photo-500KB.jpg"), (200, "photo-200KB.jpg")] {
+            let out = ImageEngine.run(&format!("fitkb:{kb}"), &input, &|_| {}).unwrap();
+            assert_eq!(out.file_name().unwrap(), name);
+            let len = std::fs::metadata(&out).unwrap().len();
+            assert!(len <= kb * 1000, "{len} > {kb} KB");
+            assert!(len > kb * 1000 / 3, "{len}: used too little of {kb} KB");
+        }
+        // Already small enough: says so, writes nothing.
+        let small = dir.join("photo-200KB.jpg");
+        let err = ImageEngine.run("fitkb:500", &small, &|_| {}).unwrap_err();
+        assert_eq!(err, "Already under 500 KB — nothing to shrink");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn svg_to_raster_and_pdf() {
+        let dir = temp_dir("svg");
+        let input = dir.join("icon.svg");
+        std::fs::write(
+            &input,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="16" viewBox="0 0 32 16">
+                <rect x="0" y="0" width="16" height="16" fill="#ff0000"/>
+                <text x="18" y="12" font-size="10">Hi</text></svg>"##,
+        )
+        .unwrap();
+
+        let ids = ids("a.svg");
+        assert!(ids.contains(&"convert:png".to_string()) && ids.contains(&"convert:pdf".to_string()));
+        assert!(!ids.iter().any(|i| i.starts_with("resize") || i.starts_with("compress")));
+
+        // Small SVGs are scaled up so the longest side is 1024 px.
+        let png = ImageEngine.run("convert:png", &input, &|_| {}).unwrap();
+        let img = image::open(&png).unwrap().into_rgba8();
+        assert_eq!((img.width(), img.height()), (1024, 512));
+        assert_eq!(img.get_pixel(10, 10).0, [255, 0, 0, 255]);
+        assert_eq!(img.get_pixel(1000, 500).0[3], 0); // background stays transparent
+
+        // JPG puts the transparent background on white, not black.
+        let jpg = ImageEngine.run("convert:jpg", &input, &|_| {}).unwrap();
+        let px = image::open(&jpg).unwrap().into_rgb8().get_pixel(1000, 500).0;
+        assert!(px.iter().all(|&c| c > 240), "{px:?}");
+
+        let pdf = ImageEngine.run("convert:pdf", &input, &|_| {}).unwrap();
+        assert!(std::fs::read(&pdf).unwrap().starts_with(b"%PDF"));
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

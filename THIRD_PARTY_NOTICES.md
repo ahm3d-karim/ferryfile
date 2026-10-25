@@ -30,8 +30,9 @@ covered by the MIT License (see LICENSE).
 ## Rust crates
 
 Ferryfile is compiled with many crates from crates.io, including Tauri (MIT/Apache-2.0),
-Typst (Apache-2.0), calamine (MIT), image (MIT/Apache-2.0) and pdfium-render
-(MIT/Apache-2.0). Run `cargo about` or `cargo license` in `src-tauri` for the
+Typst (Apache-2.0), calamine (MIT), image (MIT/Apache-2.0), pdfium-render
+(MIT/Apache-2.0), resvg (Apache-2.0/MIT), zip (MIT), sevenz-rust2 (Apache-2.0),
+tar (MIT/Apache-2.0) and flate2 (MIT/Apache-2.0). Run `cargo about` or `cargo license` in `src-tauri` for the
 complete list.
 
 ## Fonts

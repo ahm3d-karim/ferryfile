@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+mod archive_engine;
 mod builtin_engine;
 mod doc_engine;
 mod docling_engine;
@@ -20,6 +21,7 @@ mod pdf_docx;
 mod pdf_engine;
 mod pdf_layout;
 mod pdf_tools;
+mod subtitle_engine;
 mod typeset;
 
 /// Reports progress of a running action as a fraction in `0.0..=1.0`.
@@ -76,6 +78,8 @@ fn engines() -> Vec<Box<dyn Engine>> {
         Box::new(builtin_engine::BuiltinEngine),
         Box::new(doc_engine::DocEngine),
         Box::new(docling_engine::DoclingEngine),
+        Box::new(archive_engine::ArchiveEngine),
+        Box::new(subtitle_engine::SubtitleEngine),
     ]
 }
 
@@ -200,8 +204,23 @@ pub fn set_output_dir(dir: Option<PathBuf>) {
     *OUTPUT_DIR.write().unwrap() = dir;
 }
 
+/// `dir/name`, or `dir/<stem> (2).<ext>` and so on if that's taken.
+pub fn unique_in(dir: &Path, name: &str) -> PathBuf {
+    let candidate = dir.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let p = Path::new(name);
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or(name);
+    let ext = p.extension().and_then(|e| e.to_str()).map(|e| format!(".{e}")).unwrap_or_default();
+    (2..)
+        .map(|n| dir.join(format!("{stem} ({n}){ext}")))
+        .find(|c| !c.exists())
+        .unwrap()
+}
+
 /// The configured output folder if it still exists, else the input's folder.
-fn destination(input: &Path) -> PathBuf {
+pub fn destination(input: &Path) -> PathBuf {
     match OUTPUT_DIR.read().unwrap().as_ref() {
         Some(dir) if dir.is_dir() => dir.clone(),
         _ => input.parent().unwrap_or_else(|| Path::new(".")).to_path_buf(),

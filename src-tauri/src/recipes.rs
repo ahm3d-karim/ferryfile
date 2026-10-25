@@ -43,6 +43,7 @@ fn builtins() -> Vec<Recipe> {
         r("share-clip", "Share-size clip", &["scale:720", "compress:28"]),
         r("clip-gif", "Clip to GIF", &["scale:480", "convert:gif"]),
         r("podcast", "Podcast MP3", &["convert:mp3"]),
+        r("clip-10mb", "Clip under 10 MB", &["fitmb:10"]),
     ]
 }
 
