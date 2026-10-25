@@ -192,15 +192,40 @@ mod tests {
         assert!((scale_for(20_000, 100, 10_000) - 0.5).abs() < 1e-6);
     }
 
-    /// Real OCR with Windows' recognizer: `cargo test -- --ignored ocr_reads`
+    /// Real OCR with Windows' recognizer: `cargo test -- --ignored ocr_reads`.
+    /// Reads a page it renders itself (Typst + pdfium), so it runs in CI.
+    /// Set FERRYFILE_OCR_SAMPLE to an image path to try your own instead.
     #[test]
     #[ignore]
     fn ocr_reads_rendered_text() {
-        let path = std::env::var("FERRYFILE_OCR_SAMPLE").expect("set FERRYFILE_OCR_SAMPLE to an image");
-        let img = image::open(path).unwrap();
+        let (img, expected): (DynamicImage, &[&str]) = match std::env::var("FERRYFILE_OCR_SAMPLE") {
+            Ok(path) => (image::open(path).unwrap(), &[]),
+            Err(_) => (rendered_sample(), &["Ferryfile", "converts", "offline"]),
+        };
         let rec = Recognizer::new().unwrap();
         let lines = rec.recognize(&img).unwrap();
-        eprintln!("language {}\n{}", rec.language, plain_text(&lines));
+        let text = plain_text(&lines);
+        eprintln!("language {}\n{text}", rec.language);
         assert!(!lines.is_empty());
+        for w in expected {
+            assert!(text.contains(w), "OCR missed {w:?}");
+        }
+    }
+
+    /// A short paragraph typeset with Typst and rendered at 200 DPI.
+    fn rendered_sample() -> DynamicImage {
+        use pdfium_render::prelude::PdfRenderConfig;
+        let dir = std::env::temp_dir().join(format!("ferryfile-ocr-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let markup = "#set page(width: 16cm, height: 6cm, margin: 1cm)\n#set text(size: 14pt)\n\
+            Ferryfile converts files offline. Invoice 4821 ships on Monday.\n";
+        let pdf = dir.join("sample.pdf");
+        std::fs::write(&pdf, crate::engine::typeset::typst_to_pdf(markup.into(), &dir).unwrap()).unwrap();
+        let pdfium = crate::engine::pdf_engine::pdfium().unwrap();
+        let doc = pdfium.load_pdf_from_file(&pdf, None).unwrap();
+        let page = doc.pages().get(0).unwrap();
+        let img = page.render_with_config(&PdfRenderConfig::new().scale_page_by_factor(200.0 / 72.0)).unwrap().as_image().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        img
     }
 }
