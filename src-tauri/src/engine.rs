@@ -304,6 +304,10 @@ mod tests {
 
         let next = next_actions(Path::new("clip.mov"), &ids(&["audio:mp3"])).unwrap();
         assert!(next.iter().any(|a| a.id == "convert:flac"));
+
+        // LaTeX output works as a recipe step, including after another document step.
+        let (_, ext) = plan_chain(Path::new("notes.txt"), &ids(&["convert:docx", "convert:tex"])).unwrap();
+        assert_eq!(ext, "tex");
     }
 
     #[test]

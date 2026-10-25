@@ -36,6 +36,7 @@ const OUTPUTS: &[(&str, &str, &str)] = &[
     ("epub", "EPUB", "epub"),
     ("rtf", "RTF", "rtf"),
     ("txt", "Text", "plain"),
+    ("tex", "LaTeX", "latex"),
 ];
 
 pub struct DocEngine;
@@ -90,7 +91,7 @@ impl Engine for DocEngine {
         let out = output_path(input, "", ext);
         let mut cmd = tool_command(exe);
         cmd.arg("--from").arg(reader).arg("--to").arg(writer).arg("--standalone");
-        if matches!(*writer, "gfm" | "html") {
+        if matches!(*writer, "gfm" | "html" | "latex") {
             // Keep images from DOCX/ODT/EPUB inputs next to the output.
             let stem = out.file_stem().and_then(|s| s.to_str()).unwrap_or("doc");
             cmd.arg(format!("--extract-media={stem}-media"));
@@ -124,6 +125,39 @@ mod tests {
             let ids: Vec<_> = DocEngine.actions(Path::new(input)).into_iter().map(|a| a.id).collect();
             assert!(ids.contains(&"convert:md".into()), "{input} should offer Markdown");
         }
+    }
+
+    #[test]
+    fn latex_targets() {
+        for input in ["notes.md", "notes.txt", "report.docx", "page.html", "doc.odt"] {
+            let ids: Vec<_> = DocEngine.actions(Path::new(input)).into_iter().map(|a| a.id).collect();
+            assert!(ids.contains(&"convert:tex".into()), "{input} should offer LaTeX");
+        }
+        let ids: Vec<_> = DocEngine.actions(Path::new("paper.tex")).into_iter().map(|a| a.id).collect();
+        assert!(!ids.contains(&"convert:tex".into()));
+        assert_eq!(DocEngine.output_ext("convert:tex", Path::new("notes.md")).as_deref(), Some("tex"));
+    }
+
+    /// Needs pandoc, so opt-in: `cargo test -- --ignored`
+    #[test]
+    #[ignore]
+    fn latex_is_standalone() {
+        let dir = std::env::temp_dir().join(format!("ferryfile-tex-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let md = dir.join("notes.md");
+        std::fs::write(&md, "# Title\n\nSome **bold** text.\n").unwrap();
+        let txt = dir.join("plain.txt");
+        std::fs::write(&txt, "Just *some* text.\n").unwrap();
+        let noop = |_: f32| {};
+        for (input, expect) in [(&md, "\\textbf{bold}"), (&txt, "\\emph{some}")] {
+            let out = DocEngine.run("convert:tex", input, &noop).unwrap();
+            assert_eq!(ext_of(&out), "tex");
+            let body = std::fs::read_to_string(&out).unwrap();
+            for needle in ["\\documentclass", "\\begin{document}", "\\end{document}", expect] {
+                assert!(body.contains(needle), "{input:?} -> tex missing {needle}:\n{body}");
+            }
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Needs pandoc, so opt-in: `cargo test -- --ignored`

@@ -61,7 +61,7 @@ settings, and quit.
 | **Audio** | MP3, M4A, AAC, WAV, FLAC, OGG, Opus, AIFF, WMA | MP3, M4A, WAV, FLAC, OGG, Opus | FFmpeg |
 | **Video** | MP4, M4V, MOV, MKV, WebM, AVI, WMV | MP4, MOV, MKV, WebM, GIF · extract MP3/M4A · **extract subtitles (SRT)** · resize 1080/720/480p · compress · **shrink to 10 / 25 / 50 MB** | FFmpeg |
 | **PDF** | PDF | **DOCX** · PNG/JPG pages · text · Markdown · one PDF per page · rotate left/right · reverse pages · drop first/last page · compress | PDFium + pandoc |
-| **Documents** | Markdown, TXT, DOCX, ODT, EPUB, HTML, RTF, RST, Org, LaTeX, Typst, Jupyter, PPTX | DOCX, ODT, Markdown, HTML, EPUB, RTF, text, **PDF** | pandoc + built-in Typst |
+| **Documents** | Markdown, TXT, DOCX, ODT, EPUB, HTML, RTF, RST, Org, LaTeX, Typst, Jupyter, PPTX | DOCX, ODT, Markdown, HTML, EPUB, RTF, text, LaTeX, **PDF** | pandoc + built-in Typst |
 | **Spreadsheets** | XLSX, XLSM, XLSB, XLS, ODS, CSV, TSV | CSV, Markdown, HTML, **PDF** · one CSV per sheet | [calamine](https://crates.io/crates/calamine) + built-in Typst |
 | **Subtitles** | SRT, WebVTT | SRT ↔ VTT, plain text | built in |
 | **Archives** | ZIP, 7z, TAR, TAR.GZ/TGZ, GZ, RAR | extract here | [zip](https://crates.io/crates/zip), [sevenz-rust2](https://crates.io/crates/sevenz-rust2), [tar](https://crates.io/crates/tar); RAR via 7-Zip or Windows |
