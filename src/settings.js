@@ -52,6 +52,11 @@ function render() {
   setSeg("output", state.outputDir ? "folder" : "next");
   $("folder-card").hidden = !state.outputDir;
   $("folder-path").textContent = state.outputDir ?? "";
+  $("replace-original").checked = state.replaceOriginal;
+  // Don't fight the cursor while someone is typing a pattern.
+  if (document.activeElement !== patternEl) patternEl.value = state.namePattern;
+  $("name-reset").hidden = patternEl.value === DEFAULT_PATTERN;
+  previewNames();
   $("about").textContent = `Ferryfile ${state.version}`;
 }
 
@@ -65,6 +70,8 @@ async function save() {
         drawerSide: state.drawerSide,
         openDelayMs: state.openDelayMs,
         outputDir: state.outputDir,
+        namePattern: state.namePattern,
+        replaceOriginal: state.replaceOriginal,
         shakeToShelf: state.shakeToShelf,
         shakeSensitivity: state.shakeSensitivity,
       },
@@ -195,6 +202,62 @@ onSeg("output", async (v) => {
 $("pick").addEventListener("click", async () => {
   if (await chooseFolder()) save();
 });
+// ---- file names
+const DEFAULT_PATTERN = "{name}.{ext}";
+const patternEl = $("name-pattern");
+let previewSeq = 0;
+
+/** Shows what the typed pattern names two sample files; true if it's valid. */
+async function previewNames() {
+  const seq = ++previewSeq;
+  const box = $("name-preview");
+  let rows;
+  let ok = true;
+  try {
+    const names = await invoke("preview_names", { pattern: patternEl.value });
+    rows = names.map(({ action, name }) => {
+      const r = document.createElement("span");
+      r.className = "preview-row";
+      r.append(`${action} → `, Object.assign(document.createElement("b"), { textContent: name }));
+      return r;
+    });
+  } catch (err) {
+    ok = false;
+    rows = [Object.assign(document.createElement("span"), { className: "preview-row error", textContent: String(err) })];
+  }
+  if (seq !== previewSeq) return ok; // a newer keystroke won
+  box.replaceChildren(...rows);
+  patternEl.classList.toggle("invalid", !ok);
+  return ok;
+}
+
+patternEl.addEventListener("input", () => {
+  $("name-reset").hidden = patternEl.value === DEFAULT_PATTERN;
+  previewNames();
+});
+// Saved when you leave the box (or press Enter), and only if it works.
+patternEl.addEventListener("change", async () => {
+  if (patternEl.value === state.namePattern || !(await previewNames())) return;
+  state.namePattern = patternEl.value;
+  save();
+});
+patternEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") patternEl.blur();
+  if (e.key === "Escape") {
+    patternEl.value = state.namePattern;
+    patternEl.blur();
+    render();
+  }
+});
+$("name-reset").addEventListener("click", () => {
+  patternEl.value = state.namePattern = DEFAULT_PATTERN;
+  save();
+});
+$("replace-original").addEventListener("change", (e) => {
+  state.replaceOriginal = e.target.checked;
+  save();
+});
+
 $("folder-path").addEventListener("click", () => invoke("reveal", { path: state.outputDir }).catch(() => {}));
 $("config").addEventListener("click", () => invoke("reveal", { path: state.configDir }).catch(() => {}));
 

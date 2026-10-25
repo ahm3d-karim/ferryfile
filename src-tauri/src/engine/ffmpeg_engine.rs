@@ -196,7 +196,7 @@ fn fit_height(video_kbps: u32) -> u32 {
 fn fit_video(ff: &Ffmpeg, input: &Path, target: u64, suffix: &str, progress: Progress) -> Result<PathBuf, String> {
     let size = std::fs::metadata(input).map_err(|e| e.to_string())?.len();
     if size <= target {
-        let label = suffix.trim_start_matches('-').replace("MB", " MB");
+        let label = suffix.trim_start_matches('-').replace("MB", " MB").replace("KB", " KB");
         return Err(format!("Already under {label} — nothing to shrink"));
     }
     let info = probe(ff, input)?;
@@ -368,10 +368,25 @@ impl Engine for FfmpegEngine {
         out
     }
 
+    fn custom_action(&self, action_id: &str, path: &Path) -> Option<Result<Action, String>> {
+        if !VIDEO_IN.contains(&ext_of(path).as_str()) {
+            return None;
+        }
+        super::params::video_action(action_id)
+    }
+
+    fn custom_forms(&self, path: &Path) -> Vec<super::params::CustomForm> {
+        if !VIDEO_IN.contains(&ext_of(path).as_str()) {
+            return vec![];
+        }
+        use super::params::CustomForm;
+        vec![CustomForm::new("Resize", "video-height"), CustomForm::new("Shrink to", "target-size")]
+    }
+
     fn output_ext(&self, action_id: &str, _input: &Path) -> Option<String> {
         match action_id.split_once(':')? {
             ("convert" | "audio", ext) => Some(ext.to_string()),
-            ("scale" | "compress" | "fitmb", _) => Some("mp4".into()),
+            ("scale" | "compress" | "fitmb" | "fitkb", _) => Some("mp4".into()),
             ("subs", ext) => Some(ext.to_string()),
             _ => None,
         }
@@ -386,8 +401,9 @@ impl Engine for FfmpegEngine {
             "convert" => (output_path(input, "", arg), video_args(ff, arg)?),
             "audio" => (output_path(input, "", arg), audio_args(ff, arg)?),
             "scale" => {
-                let height: u32 = arg.parse().map_err(|_| "bad height")?;
-                let mut a = vec!["-vf".to_string(), format!("scale=-2:'min({height},ih)'")];
+                let height = super::params::video_height(arg)?;
+                // H.264 needs even sides.
+                let mut a = vec!["-vf".to_string(), format!("scale=-2:'trunc(min({height},ih)/2)*2'")];
                 a.extend(h264_args(ff, 23)?);
                 (output_path(input, &format!("-{height}p"), "mp4"), a)
             }
@@ -398,6 +414,11 @@ impl Engine for FfmpegEngine {
             "fitmb" => {
                 let mb: u64 = arg.parse().map_err(|_| "bad size")?;
                 return fit_video(ff, input, mb * 1_000_000, &format!("-{mb}MB"), progress);
+            }
+            "fitkb" => {
+                let kb = super::params::target_kb(arg)?;
+                let suffix = format!("-{}", super::params::kb_label(kb).replace(' ', ""));
+                return fit_video(ff, input, kb * 1000, &suffix, progress);
             }
             "subs" => {
                 let args = ["-map", "0:s:0", "-c:s", "srt"].map(String::from).to_vec();
