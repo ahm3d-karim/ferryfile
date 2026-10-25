@@ -2,6 +2,7 @@
 // Launcher for Ferryfile. On first run it downloads the portable build for this
 // package's version from GitHub Releases, checks its SHA-256, unpacks it to
 // %LOCALAPPDATA%\ferryfile\<version>, then starts Ferryfile in the background.
+// Command-line calls (`ferryfile convert …`) run the same exe and wait for it.
 // No install scripts run during `npm install`; everything happens here.
 
 import { createHash } from "node:crypto";
@@ -17,7 +18,10 @@ const dir = join(base, release.version);
 const exe = join(dir, "ferryfile.exe");
 
 const args = process.argv.slice(2);
-if (args.includes("--help") || args.includes("-h")) {
+// Options this launcher handles itself, only when given alone. Anything else
+// (`convert …`, `recipe … --help`) goes to ferryfile.exe.
+const own = args.length === 1 ? args[0] : "";
+if (own === "--help" || own === "-h") {
   console.log(`ferryfile ${release.version}: offline drag-and-drop file converter for Windows
 
 Usage:
@@ -26,11 +30,19 @@ Usage:
   ferryfile --path       print where Ferryfile is installed
   ferryfile --version    print the version
 
+Command line (runs without the tray app):
+  ferryfile actions <file>                    list the actions for a file
+  ferryfile convert <files...> --to <format>  convert, e.g. --to webp
+  ferryfile run-action <id> <files...>        run an action id from "actions"
+  ferryfile recipes                           list recipes
+  ferryfile recipe <name|id> <files...>       run a recipe
+  Options: --out <dir>, --json. More: ferryfile help
+
 Ferryfile is ~120 MB on first run (it includes FFmpeg, pandoc and PDFium).
 More: https://github.com/ahm3d-karim/ferryfile`);
   process.exit(0);
 }
-if (args.includes("--version") || args.includes("-v")) {
+if (own === "--version" || own === "-v") {
   console.log(release.version);
   process.exit(0);
 }
@@ -83,14 +95,20 @@ async function download() {
 }
 
 try {
-  if (args.includes("--path")) {
+  if (own === "--path") {
     console.log(dir);
     process.exit(0);
   }
   if (!existsSync(exe)) await download();
-  if (args.includes("--install")) {
+  if (own === "--install") {
     console.error(`Ferryfile ${release.version} is installed in ${dir}`);
     process.exit(0);
+  }
+  if (args.length > 0) {
+    // A command-line call: wait for it and pass its output and exit code on.
+    const run = spawnSync(exe, args, { stdio: "inherit" });
+    if (run.error) throw run.error;
+    process.exit(run.status ?? 1);
   }
   // Detached so Ferryfile keeps running in the tray after this terminal closes.
   spawn(exe, [], { detached: true, stdio: "ignore", cwd: dir }).unref();

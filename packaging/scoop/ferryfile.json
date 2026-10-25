@@ -3,13 +3,14 @@
     "description": "Offline drag-and-drop file converter for Windows",
     "homepage": "https://github.com/ahm3d-karim/ferryfile",
     "license": "MIT",
-    "notes": "Ferryfile runs in the system tray. Drag a file from Explorer to open the drawer.",
+    "notes": "Ferryfile runs in the system tray. Drag a file from Explorer to open the drawer. Run `ferryfile --help` for the command line.",
     "architecture": {
         "64bit": {
             "url": "https://github.com/ahm3d-karim/ferryfile/releases/download/v0.1.0/Ferryfile_0.1.0_x64-portable.zip",
             "hash": "a16844ad6756432dd7f25428626efa9650ea5a5add79ae0f24d8665eb99167e6"
         }
     },
+    "bin": "ferryfile.exe",
     "shortcuts": [
         [
             "ferryfile.exe",

@@ -55,6 +55,8 @@ pub struct Settings {
     /// Shaking the cursor mid-drag opens a new shelf at the cursor.
     pub shake_to_shelf: bool,
     pub shake_sensitivity: Sensitivity,
+    /// Folders whose new files run through a recipe or action.
+    pub watch_folders: Vec<crate::watch::WatchFolder>,
 }
 
 impl Default for Settings {
@@ -68,6 +70,7 @@ impl Default for Settings {
             output_dir: None,
             shake_to_shelf: true,
             shake_sensitivity: Sensitivity::Normal,
+            watch_folders: Vec::new(),
         }
     }
 }
@@ -100,6 +103,7 @@ pub fn load(app: &AppHandle) {
         .unwrap_or_default();
     // A taken hotkey isn't fatal; Settings shows it as not working.
     let _ = crate::hotkey::register(app, &settings.hotkey);
+    crate::watch::configure(app, &settings.watch_folders);
     apply(settings);
 }
 
@@ -152,6 +156,9 @@ pub fn set_settings(app: AppHandle, settings: Settings, autostart: bool) -> Resu
     }
     let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    if settings.watch_folders != current().watch_folders {
+        crate::watch::configure(&app, &settings.watch_folders);
+    }
     apply(settings);
     Ok(())
 }

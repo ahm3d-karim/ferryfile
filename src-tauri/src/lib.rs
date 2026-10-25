@@ -1,3 +1,4 @@
+pub mod cli;
 mod drag;
 mod dropbridge;
 mod engine;
@@ -7,6 +8,7 @@ mod recipes;
 mod settings;
 mod shake;
 mod shelf;
+mod watch;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -164,6 +166,9 @@ pub fn run() {
             recipes::save_recipe,
             recipes::delete_recipe,
             recipes::run_recipe,
+            watch::watch_errors,
+            watch::watch_choices,
+            watch::pick_watch_folder,
         ])
         .setup(|app| {
             settings::load(app.handle());

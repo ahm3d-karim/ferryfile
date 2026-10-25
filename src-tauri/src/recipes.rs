@@ -52,12 +52,37 @@ fn store_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("recipes.json"))
 }
 
-fn load_custom(app: &AppHandle) -> Vec<Recipe> {
-    store_path(app)
+fn load_custom_from(path: &Path) -> Vec<Recipe> {
+    std::fs::read_to_string(path)
         .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+fn load_custom(app: &AppHandle) -> Vec<Recipe> {
+    store_path(app).map(|p| load_custom_from(&p)).unwrap_or_default()
+}
+
+/// Built-in and saved recipes, read from `config_dir` (for the CLI, which
+/// runs without the app).
+pub fn all_in(config_dir: &Path) -> Vec<Recipe> {
+    let mut v = builtins();
+    v.extend(load_custom_from(&config_dir.join("recipes.json")));
+    v
+}
+
+/// The recipe `query` names: its id, its id without `builtin:`, or its name
+/// (any case).
+pub fn lookup(recipes: Vec<Recipe>, query: &str) -> Option<Recipe> {
+    let q = query.trim();
+    let short = |r: &Recipe| r.id.strip_prefix(BUILTIN_PREFIX).map(str::to_string);
+    let by_id = recipes.iter().position(|r| r.id == q || short(r).as_deref() == Some(q));
+    let i = by_id.or_else(|| recipes.iter().position(|r| r.name.eq_ignore_ascii_case(q)))?;
+    recipes.into_iter().nth(i)
+}
+
+pub fn is_builtin(id: &str) -> bool {
+    id.starts_with(BUILTIN_PREFIX)
 }
 
 fn save_custom(app: &AppHandle, recipes: &[Recipe]) -> Result<(), String> {
@@ -72,7 +97,7 @@ fn save_custom(app: &AppHandle, recipes: &[Recipe]) -> Result<(), String> {
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
-fn all(app: &AppHandle) -> Vec<Recipe> {
+pub fn all(app: &AppHandle) -> Vec<Recipe> {
     let mut v = builtins();
     v.extend(load_custom(app));
     v
@@ -80,7 +105,7 @@ fn all(app: &AppHandle) -> Vec<Recipe> {
 
 fn view(recipe: Recipe, actions: Vec<Action>) -> RecipeView {
     RecipeView {
-        builtin: recipe.id.starts_with(BUILTIN_PREFIX),
+        builtin: is_builtin(&recipe.id),
         step_titles: actions.iter().map(Action::title).collect(),
         id: recipe.id,
         name: recipe.name,
@@ -197,5 +222,14 @@ mod tests {
                 r.name
             );
         }
+    }
+
+    #[test]
+    fn looks_up_by_id_short_id_or_name() {
+        let found = |q: &str| lookup(builtins(), q).map(|r| r.id);
+        assert_eq!(found("builtin:podcast").as_deref(), Some("builtin:podcast"));
+        assert_eq!(found("web-image").as_deref(), Some("builtin:web-image"));
+        assert_eq!(found("clip to gif").as_deref(), Some("builtin:clip-gif"));
+        assert_eq!(found("nope"), None);
     }
 }

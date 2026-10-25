@@ -35,6 +35,7 @@ resvg = "0.47"
 tar = "0.4"
 flate2 = "1"
 sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["bzip2", "ppmd", "deflate", "util"] }
+notify = { version = "8", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
@@ -47,6 +48,9 @@ features = [
   "Win32_UI_WindowsAndMessaging",
   "Win32_System_LibraryLoader",
   "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_System_Console",
+  "Win32_Storage_FileSystem",
+  "Win32_Security",
 ]
 
 [dev-dependencies]

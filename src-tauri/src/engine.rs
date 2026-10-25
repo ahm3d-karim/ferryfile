@@ -219,8 +219,34 @@ pub fn unique_in(dir: &Path, name: &str) -> PathBuf {
         .unwrap()
 }
 
+thread_local! {
+    static THREAD_OUTPUT_DIR: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `f` with outputs on this thread going to `dir`, whatever the global
+/// setting says. The CLI (`--out`) and watch folders use this.
+pub fn with_output_dir<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
+    struct Restore(Option<PathBuf>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            THREAD_OUTPUT_DIR.with(|d| *d.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(THREAD_OUTPUT_DIR.with(|d| d.borrow_mut().replace(dir.to_path_buf())));
+    f()
+}
+
+/// Extension `action_id` produces from `input`, if some engine offers it.
+pub fn action_output_ext(action_id: &str, input: &Path) -> Option<String> {
+    let (engine, _) = find(action_id, input)?;
+    engine.output_ext(action_id, input)
+}
+
 /// The configured output folder if it still exists, else the input's folder.
 pub fn destination(input: &Path) -> PathBuf {
+    if let Some(dir) = THREAD_OUTPUT_DIR.with(|d| d.borrow().clone()) {
+        return dir;
+    }
     match OUTPUT_DIR.read().unwrap().as_ref() {
         Some(dir) if dir.is_dir() => dir.clone(),
         _ => input.parent().unwrap_or_else(|| Path::new(".")).to_path_buf(),

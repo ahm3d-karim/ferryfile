@@ -63,6 +63,18 @@ label.item:hover { background: var(--subtle-hover); }
 }
 .path:hover { color: var(--text); text-decoration: underline; }
 
+/* Drop-down, sized like the other controls */
+.select {
+  flex: none; max-width: 210px; min-height: 30px; padding: 0 8px;
+  background: var(--control); border: 1px solid var(--stroke); border-radius: var(--r-control); font-size: 13px;
+}
+.select:hover { background: var(--control-hover); }
+.select option, .select optgroup { background: var(--layer); color: var(--text); }
+
+/* Watch folders: links under each watch */
+.item.watch-actions { min-height: 32px; padding-bottom: 6px; justify-content: flex-end; gap: 14px; }
+.watch-head .item-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 #status { margin: 0; font-size: 12px; color: var(--text-2); }
 #status:empty { display: none; }
 #status.error { color: var(--critical); }
